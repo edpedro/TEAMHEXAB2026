@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  fullName      String   @map("full_name") @db.VarChar(200)
+  username      String   @unique @db.VarChar(50)
+  passwordHash  String   @map("password_hash") @db.VarChar(255)
+  role          Role     @default(USER)
+  isActive      Boolean  @default(true) @map("is_active")
+  isTempPassword Boolean @default(false) @map("is_temp_password")
+  hasPaid       Boolean  @default(false) @map("has_paid")
+  paidAt        DateTime? @map("paid_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  predictions         Prediction[]
+  userAchievements    UserAchievement[]
+  notifications       Notification[]
+  rankingHistory      RankingHistory[]
+  auditLogs           AuditLog[]
+  topScorerPrediction TopScorerPrediction?
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model Match {
+  id         String          @id @default(uuid()) @db.Uuid
+  teamHome   String          @map("team_home") @db.VarChar(100)
+  teamAway   String          @map("team_away") @db.VarChar(100)
+  teamHomeIso String?        @map("team_home_iso") @db.VarChar(10)
+  teamAwayIso String?        @map("team_away_iso") @db.VarChar(10)
+  flagHome   String?         @map("flag_home") @db.VarChar(500)
+  flagAway   String?         @map("flag_away") @db.VarChar(500)
+  stadium    String?         @db.VarChar(150)
+  city       String?         @db.VarChar(100)
+  country    String?         @db.VarChar(100)
+  matchDate  DateTime        @map("match_date")
+  phase      String          @default("Fase de Grupos") @db.VarChar(50)
+  groupLabel String?         @map("group_label") @db.VarChar(5)
+  homeScore  Int?            @map("home_score")
+  awayScore  Int?            @map("away_score")
+  status     MatchStatus     @default(SCHEDULED)
+
+  predictions Prediction[]
+
+  @@map("matches")
+}
+
+enum MatchStatus {
+  SCHEDULED
+  IN_PROGRESS
+  FINISHED
+}
+
+model Prediction {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  matchId        String   @map("match_id") @db.Uuid
+  predictedHome  Int      @map("predicted_home")
+  predictedAway  Int      @map("predicted_away")
+  pointsEarned   Int?     @map("points_earned")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, matchId])
+  @@map("predictions")
+}
+
+model Achievement {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(100)
+  description String   @db.Text
+  icon        String   @db.VarChar(50)
+
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  achievementId String   @map("achievement_id") @db.Uuid
+  earnedAt      DateTime @default(now()) @map("earned_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String   @db.VarChar(200)
+  message   String   @db.Text
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model RankingHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  position   Int
+  score      Int      @default(0)
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([recordedAt])
+  @@map("ranking_history")
+}
+
+model SystemConfig {
+  id              String  @id @default(uuid()) @db.Uuid
+  knockoutEnabled Boolean @default(false) @map("knockout_enabled")
+  bettingEnabled  Boolean @default(true) @map("betting_enabled")
+  betDeadline     DateTime? @map("bet_deadline")
+
+  @@map("system_config")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  action    String   @db.VarChar(255)
+  details   String?  @db.Text
+  ip        String?  @db.VarChar(45)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
+
+model TopScorerPrediction {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  player1   String   @db.VarChar(150)
+  player2   String   @db.VarChar(150)
+  player3   String   @db.VarChar(150)
+  player4   String   @db.VarChar(150)
+  player5   String   @db.VarChar(150)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("top_scorer_predictions")
+}
