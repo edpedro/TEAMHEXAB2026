@@ -26,10 +26,12 @@ RUN npx prisma generate
 
 COPY --from=build /app/dist ./dist
 
+# ✅ Cria a pasta uploads para evitar crash na inicialização
+RUN mkdir -p /app/uploads
+
 ENV NODE_ENV=production
 ENV PORT=3000
 
 EXPOSE 3000
 
-# Usa sh script para separar migrate do start
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]

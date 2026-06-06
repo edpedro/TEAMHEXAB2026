@@ -3,6 +3,7 @@ import { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { join } from "path";
+import { existsSync, mkdirSync } from "fs"; // ✅ adicione isso
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
@@ -16,7 +17,12 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.useStaticAssets(join(__dirname, "..", "uploads"), { prefix: "/uploads" });
+  // ✅ Garante que a pasta existe antes de servir
+  const uploadsPath = join(__dirname, "..", "uploads");
+  if (!existsSync(uploadsPath)) {
+    mkdirSync(uploadsPath, { recursive: true });
+  }
+  app.useStaticAssets(uploadsPath, { prefix: "/uploads" });
 
   app.setGlobalPrefix("api");
 
