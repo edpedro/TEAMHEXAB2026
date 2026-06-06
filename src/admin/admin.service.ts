@@ -6,6 +6,7 @@ import { GamificationService } from '../gamification/gamification.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ScoringService } from './scoring.service';
 import { RankingService } from '../ranking/ranking.service';
+import { ReceiptsService } from '../receipts/receipts.service';
 
 @Injectable()
 export class AdminService {
@@ -15,6 +16,7 @@ export class AdminService {
     private notificationsService: NotificationsService,
     private scoringService: ScoringService,
     private rankingService: RankingService,
+    private receiptsService: ReceiptsService,
   ) {}
 
   async getDashboard() {
@@ -27,6 +29,59 @@ export class AdminService {
       this.prisma.user.count({ where: { hasPaid: true, isActive: true } }),
     ]);
     return { activeUsers, totalPredictions, totalMatches, finishedMatches, paidUsers, ranking };
+  }
+
+  async getFinancialDashboard() {
+    const config = await this.prisma.systemConfig.findFirst();
+    const betAmount = config?.betAmount ?? 20;
+    const paidUsers = await this.prisma.user.count({ where: { hasPaid: true, isActive: true } });
+    const pendingUsers = await this.prisma.user.count({ where: { hasPaid: false, isActive: true } });
+    const totalCollected = Number(betAmount) * paidUsers;
+    const prizePool = totalCollected;
+
+    return {
+      betAmount: Number(betAmount),
+      paidUsers,
+      pendingUsers,
+      totalCollected,
+      prizePool,
+    };
+  }
+
+  async updateBetAmount(amount: number) {
+    if (amount <= 0) throw new BadRequestException('Valor da aposta deve ser maior que zero');
+    const config = await this.prisma.systemConfig.findFirst();
+    if (!config) {
+      return this.prisma.systemConfig.create({ data: { betAmount: amount } });
+    }
+    return this.prisma.systemConfig.update({
+      where: { id: config.id },
+      data: { betAmount: amount },
+    });
+  }
+
+  async updatePixKey(pixKey: string) {
+    if (!pixKey?.trim()) throw new BadRequestException('Chave PIX é obrigatória');
+    const config = await this.prisma.systemConfig.findFirst();
+    if (!config) {
+      return this.prisma.systemConfig.create({ data: { pixKey: pixKey.trim() } });
+    }
+    return this.prisma.systemConfig.update({
+      where: { id: config.id },
+      data: { pixKey: pixKey.trim() },
+    });
+  }
+
+  async getReceipts() {
+    return this.receiptsService.findAll();
+  }
+
+  async approveReceipt(id: string, adminNotes?: string) {
+    return this.receiptsService.approve(id, adminNotes);
+  }
+
+  async rejectReceipt(id: string, adminNotes?: string) {
+    return this.receiptsService.reject(id, adminNotes);
   }
 
   async setPassword(userId: string, newPassword: string) {

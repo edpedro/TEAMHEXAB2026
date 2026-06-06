@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './common/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -12,11 +14,13 @@ import { AdminModule } from './admin/admin.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { FootballApiModule } from './football-api/football-api.module';
 import { TopScorersModule } from './top-scorers/top-scorers.module';
+import { ReceiptsModule } from './receipts/receipts.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -28,6 +32,10 @@ import { TopScorersModule } from './top-scorers/top-scorers.module';
     GamificationModule,
     FootballApiModule,
     TopScorersModule,
+    ReceiptsModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

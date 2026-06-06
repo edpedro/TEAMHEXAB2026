@@ -7,6 +7,13 @@ export class RankingService {
   constructor(private prisma: PrismaService) {}
 
   async getRanking(limit = 50) {
+    const [config, paidUsersCount] = await Promise.all([
+      this.prisma.systemConfig.findFirst(),
+      this.prisma.user.count({ where: { hasPaid: true, isActive: true } }),
+    ]);
+    const betAmount = Number(config?.betAmount ?? 20);
+    const prizePool = paidUsersCount * betAmount;
+
     const users = await this.prisma.user.findMany({
       where: { isActive: true },
       select: {
@@ -14,8 +21,11 @@ export class RankingService {
         fullName: true,
         username: true,
         hasPaid: true,
+        paidAt: true,
+        createdAt: true,
         predictions: {
-          select: { pointsEarned: true },
+          select: { pointsEarned: true, createdAt: true },
+          orderBy: { createdAt: 'asc' },
         },
         _count: {
           select: { userAchievements: true },
@@ -23,36 +33,42 @@ export class RankingService {
       },
     });
 
-    const ranking = users
-      .map((user) => {
-        const totalScore = user.predictions.reduce(
-          (sum, p) => sum + (p.pointsEarned || 0),
-          0,
-        );
-        const exactHits = user.predictions.filter(
-          (p) => p.pointsEarned === 5,
-        ).length;
-        return {
-          id: user.id,
-          fullName: user.fullName,
-          username: user.username,
-          hasPaid: user.hasPaid,
-          score: totalScore,
-          exactHits,
-          achievements: user._count.userAchievements,
-        };
-      })
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        return b.exactHits - a.exactHits;
-      })
+    const mapped = users.map((user) => {
+      const totalScore = user.predictions.reduce(
+        (sum, p) => sum + (p.pointsEarned || 0), 0,
+      );
+      const exactHits = user.predictions.filter(
+        (p) => p.pointsEarned === 5,
+      ).length;
+      const firstPredictionAt = user.predictions[0]?.createdAt ?? null;
+      return {
+        id: user.id,
+        fullName: user.fullName,
+        username: user.username,
+        hasPaid: user.hasPaid,
+        paidAt: user.paidAt,
+        createdAt: user.createdAt,
+        firstPredictionAt,
+        score: totalScore,
+        exactHits,
+        achievements: user._count.userAchievements,
+      };
+    });
+
+    const ranking = this.sortWithTiebreakers(mapped)
       .slice(0, limit)
       .map((user, index) => ({
         position: index + 1,
-        ...user,
+        id: user.id,
+        fullName: user.fullName,
+        username: user.username,
+        hasPaid: user.hasPaid,
+        score: user.score,
+        exactHits: user.exactHits,
+        achievements: user.achievements,
       }));
 
-    const prizes = await this.calculatePrizes();
+    const prizes = await this.calculatePrizes(prizePool);
 
     return ranking.map((entry) => ({
       ...entry,
@@ -60,18 +76,36 @@ export class RankingService {
     }));
   }
 
-  private async calculatePrizes(): Promise<Record<string, number>> {
-    const paidUsers = await this.prisma.user.count({
-      where: { hasPaid: true, isActive: true },
+  private sortWithTiebreakers(users: any[]) {
+    return users.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.exactHits !== a.exactHits) return b.exactHits - a.exactHits;
+      const paidA = a.paidAt?.getTime() ?? Infinity;
+      const paidB = b.paidAt?.getTime() ?? Infinity;
+      if (paidA !== paidB) return paidA - paidB;
+      const createdA = a.createdAt.getTime();
+      const createdB = b.createdAt.getTime();
+      if (createdA !== createdB) return createdA - createdB;
+      const firstA = a.firstPredictionAt?.getTime() ?? Infinity;
+      const firstB = b.firstPredictionAt?.getTime() ?? Infinity;
+      return firstA - firstB;
     });
-    const prizePool = paidUsers * 20;
-    if (paidUsers === 0 || prizePool <= 0) return {};
+  }
+
+  private async calculatePrizes(prizePool: number): Promise<Record<string, number>> {
+    const result: Record<string, number> = {};
+    if (prizePool <= 0) return result;
 
     const users = await this.prisma.user.findMany({
       where: { hasPaid: true, isActive: true },
       select: {
         id: true,
-        predictions: { select: { pointsEarned: true } },
+        paidAt: true,
+        createdAt: true,
+        predictions: {
+          select: { pointsEarned: true, createdAt: true },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
@@ -79,33 +113,25 @@ export class RankingService {
       .map((u) => ({
         id: u.id,
         score: u.predictions.reduce((s, p) => s + (p.pointsEarned || 0), 0),
+        exactHits: u.predictions.filter((p) => p.pointsEarned === 5).length,
+        paidAt: u.paidAt,
+        createdAt: u.createdAt,
+        firstPredictionAt: u.predictions[0]?.createdAt ?? null,
       }))
-      .filter((u) => u.score > 0)
-      .sort((a, b) => b.score - a.score);
+      .filter((u) => u.score > 0);
+
+    this.sortWithTiebreakers(qualifiers);
 
     const Q = qualifiers.length;
-    if (Q === 0) return {};
+    let pct: number[];
+    if (Q >= 3) pct = [0.6, 0.25, 0.15];
+    else if (Q === 2) pct = [0.7, 0.3];
+    else if (Q === 1) pct = [1.0];
+    else return result;
 
-    const percents =
-      Q >= 3 ? [0.6, 0.25, 0.15] : Q === 2 ? [60 / 85, 25 / 85] : [1.0];
-
-    const result: Record<string, number> = {};
-    let i = 0;
-    while (i < Q && i < percents.length) {
-      let j = i + 1;
-      while (j < Q && qualifiers[j].score === qualifiers[i].score) {
-        j++;
-      }
-      const tiedCount = j - i;
-      const combinedPct = percents.slice(i, j).reduce((s, p) => s + p, 0);
-      const totalPrize = Math.round(prizePool * combinedPct * 100) / 100;
-      const perUser = Math.round((totalPrize / tiedCount) * 100) / 100;
-      for (let k = i; k < j; k++) {
-        result[qualifiers[k].id] = perUser;
-      }
-      i = j;
+    for (let k = 0; k < pct.length; k++) {
+      result[qualifiers[k].id] = Math.round(prizePool * pct[k] * 100) / 100;
     }
-
     return result;
   }
 
@@ -118,7 +144,6 @@ export class RankingService {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async recordDailySnapshot() {
     const ranking = await this.getRanking();
-
     for (const entry of ranking) {
       await this.prisma.rankingHistory.create({
         data: {
@@ -139,33 +164,33 @@ export class RankingService {
   }
 
   async getPrizeRules() {
-    const paidUsersCount = await this.prisma.user.count({
-      where: { hasPaid: true, isActive: true },
-    });
-    const registrationFee = 20;
-    const total = paidUsersCount * registrationFee;
-    const prizePool = total;
+    const [config, paidUsersCount] = await Promise.all([
+      this.prisma.systemConfig.findFirst(),
+      this.prisma.user.count({ where: { hasPaid: true, isActive: true } }),
+    ]);
+    const betAmount = Number(config?.betAmount ?? 20);
+    const totalCollected = paidUsersCount * betAmount;
 
     const distributionTable = [
       { qualifiers: '3 ou mais', first: '60%', second: '25%', third: '15%' },
-      { qualifiers: '2', first: '~70,6%', second: '~29,4%', third: '—' },
+      { qualifiers: '2', first: '70%', second: '30%', third: '—' },
       { qualifiers: '1', first: '100%', second: '—', third: '—' },
-      { qualifiers: '0', first: '—', second: '—', third: '—' },
     ];
 
     return {
       paidUsers: paidUsersCount,
-      registrationFee,
-      totalCollected: total,
-      prizePool,
+      registrationFee: betAmount,
+      totalCollected,
+      prizePool: totalCollected,
       distributionTable,
       rules: [
-        'Apenas usuários com pagamento confirmado concorrem à premiação.',
-        'Apenas usuários com pontuação maior que zero concorrem à premiação.',
-        'A ordem do ranking para premiação considera apenas os usuários que pontuaram.',
-        'Quando apenas 2 usuários pontuam, os percentuais são recalculados proporcionalmente: 1º ~70,6%, 2º ~29,4%.',
-        'Quando apenas 1 usuário pontua, ele recebe 100% da premiação.',
-        'Em caso de empate em qualquer posição, o valor correspondente é dividido igualmente entre os empatados.',
+        'Apenas participantes com pontuação maior que zero concorrem à premiação.',
+        '3 ou mais qualificados: 1º=60%, 2º=25%, 3º=15%.',
+        '2 qualificados: 1º=70%, 2º=30% (sem 3º lugar).',
+        '1 qualificado: 1º=100% (sem 2º ou 3º lugar).',
+        'Nenhum qualificado: nenhuma premiação distribuída.',
+        'Critérios de desempate (sequencial): maior pontuação → mais placares exatos → pagamento mais antigo → cadastro mais antigo → primeiro palpite mais antigo.',
+        'Não há divisão de prêmio por empate.',
       ],
     };
   }

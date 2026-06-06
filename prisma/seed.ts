@@ -32,11 +32,10 @@ async function main() {
     },
   });
 
-  await prisma.systemConfig.upsert({
-    where: { id: (await prisma.systemConfig.findFirst())?.id || 'none' },
-    update: {},
-    create: {},
-  });
+  const existingConfig = await prisma.systemConfig.findFirst();
+  if (!existingConfig) {
+    await prisma.systemConfig.create({ data: {} });
+  }
 
   const existingCount = await prisma.achievement.count();
   if (existingCount === 0) {

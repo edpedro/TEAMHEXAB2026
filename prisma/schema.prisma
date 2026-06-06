@@ -25,6 +25,7 @@ model User {
   rankingHistory      RankingHistory[]
   auditLogs           AuditLog[]
   topScorerPrediction TopScorerPrediction?
+  paymentReceipts     PaymentReceipt[]
 
   @@map("users")
 }
@@ -131,12 +132,31 @@ model RankingHistory {
 }
 
 model SystemConfig {
-  id              String  @id @default(uuid()) @db.Uuid
-  knockoutEnabled Boolean @default(false) @map("knockout_enabled")
-  bettingEnabled  Boolean @default(true) @map("betting_enabled")
+  id              String    @id @default(uuid()) @db.Uuid
+  knockoutEnabled Boolean   @default(false) @map("knockout_enabled")
+  bettingEnabled  Boolean   @default(true) @map("betting_enabled")
   betDeadline     DateTime? @map("bet_deadline")
+  betAmount       Decimal   @default(20.0) @map("bet_amount") @db.Decimal(10, 2)
+  pixKey          String    @default("81986964573") @map("pix_key") @db.VarChar(100)
 
   @@map("system_config")
+}
+
+model PaymentReceipt {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  filePath   String   @map("file_path") @db.VarChar(500)
+  fileName   String   @map("file_name") @db.VarChar(255)
+  mimeType   String   @map("mime_type") @db.VarChar(50)
+  notes      String?  @db.Text
+  status     String   @default("PENDING") @db.VarChar(20)
+  adminNotes String?  @map("admin_notes") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("payment_receipts")
 }
 
 model AuditLog {

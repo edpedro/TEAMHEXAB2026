@@ -9,6 +9,7 @@ import {
   Res,
   UploadedFile,
   UseInterceptors,
+  ParseFloatPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
@@ -27,6 +28,36 @@ export class AdminController {
   @Get('dashboard')
   getDashboard() {
     return this.adminService.getDashboard();
+  }
+
+  @Get('financial')
+  getFinancial() {
+    return this.adminService.getFinancialDashboard();
+  }
+
+  @Patch('config/bet-amount')
+  updateBetAmount(@Body('amount', ParseFloatPipe) amount: number) {
+    return this.adminService.updateBetAmount(amount);
+  }
+
+  @Patch('config/pix-key')
+  updatePixKey(@Body('pixKey') pixKey: string) {
+    return this.adminService.updatePixKey(pixKey);
+  }
+
+  @Get('receipts')
+  getReceipts() {
+    return this.adminService.getReceipts();
+  }
+
+  @Post('receipts/:id/approve')
+  approveReceipt(@Param('id') id: string, @Body('adminNotes') adminNotes?: string) {
+    return this.adminService.approveReceipt(id, adminNotes);
+  }
+
+  @Post('receipts/:id/reject')
+  rejectReceipt(@Param('id') id: string, @Body('adminNotes') adminNotes?: string) {
+    return this.adminService.rejectReceipt(id, adminNotes);
   }
 
   @Post('users/:id/set-password')
