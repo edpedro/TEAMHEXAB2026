@@ -10,7 +10,9 @@ RUN npx prisma generate
 
 COPY tsconfig.json nest-cli.json ./
 COPY src ./src/
-RUN npm run build
+
+# Build com verificação — falha explicitamente se dist não for gerado
+RUN npm run build && ls -la dist/
 
 FROM node:20-alpine
 
@@ -24,9 +26,13 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY prisma ./prisma/
 RUN npx prisma generate
 
+# Copia o dist do estágio de build
 COPY --from=build /app/dist ./dist
 
-# ✅ Cria a pasta uploads para evitar crash na inicialização
+# Verifica se o dist foi copiado corretamente
+RUN ls -la dist/ && echo "✅ dist/main.js existe" || (echo "❌ dist/ vazio!" && exit 1)
+
+# Cria pasta uploads
 RUN mkdir -p /app/uploads
 
 ENV NODE_ENV=production

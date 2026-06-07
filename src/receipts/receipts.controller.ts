@@ -7,10 +7,13 @@ import {
   UploadedFile,
   Body,
   BadRequestException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
+import { unlink } from 'fs/promises';
 import { ReceiptsService } from './receipts.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -18,13 +21,15 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 @Controller('receipts')
 @UseGuards(JwtAuthGuard)
 export class ReceiptsController {
+  private readonly logger = new Logger(ReceiptsController.name);
+
   constructor(private receiptsService: ReceiptsService) {}
 
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: join(__dirname, '..', '..', 'uploads', 'receipts'),
+        destination: join(process.cwd(), 'uploads', 'receipts'),
         filename: (req, file, cb) => {
           const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
           cb(null, uniqueSuffix + extname(file.originalname));
@@ -49,13 +54,25 @@ export class ReceiptsController {
     if (!file) {
       throw new BadRequestException('Nenhum arquivo enviado');
     }
-    return this.receiptsService.create({
-      userId,
-      filePath: file.path,
-      fileName: file.originalname,
-      mimeType: file.mimetype,
-      notes,
-    });
+    try {
+      return await this.receiptsService.create({
+        userId,
+        filePath: file.path,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        notes,
+      });
+    } catch (error) {
+      this.logger.error(`Erro ao salvar comprovante no banco: ${error.message}`);
+      try {
+        await unlink(file.path);
+      } catch {
+        this.logger.warn(`Não foi possível remover arquivo órfão: ${file.path}`);
+      }
+      throw new InternalServerErrorException(
+        'Erro ao processar comprovante. Tente novamente.',
+      );
+    }
   }
 
   @Get('my')
