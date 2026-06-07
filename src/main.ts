@@ -12,8 +12,24 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>("PORT", 3000);
 
+  const envOrigins = (configService.get<string>("FRONTEND_URL", "") || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const defaultOrigins = [
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "https://teamhexaf-2026.vercel.app",
+  ];
+  const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
   app.enableCors({
-    origin: configService.get<string>("FRONTEND_URL", "http://localhost:5173"),
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
+      }
+    },
     credentials: true,
   });
 
