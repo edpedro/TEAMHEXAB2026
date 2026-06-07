@@ -19,6 +19,7 @@ async function bootstrap() {
   const defaultOrigins = [
     "http://localhost:5173",
     "http://localhost:4173",
+    "http://192.168.0.109:5173",
     "https://teamhexaf-2026.vercel.app",
   ];
   const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];

@@ -174,6 +174,7 @@ export class FootballApiService implements OnModuleInit {
         continue;
       }
 
+      const stadiumInfo = getStadiumInfo(match.stadium_id);
       const matchDate = this.parseLocalDate(match.local_date);
       if (!matchDate) continue;
 
@@ -184,7 +185,6 @@ export class FootballApiService implements OnModuleInit {
 
       const homeInfo = getTeamInfo(homeEn);
       const awayInfo = getTeamInfo(awayEn);
-      const stadiumInfo = getStadiumInfo(match.stadium_id);
 
       const existing = await this.prisma.match.findFirst({
         where: {
@@ -261,6 +261,7 @@ export class FootballApiService implements OnModuleInit {
       const awayEn = match.away_team_name_en || match.away_team_label || null;
       if (!homeEn || !awayEn) continue;
 
+      const stadiumInfo = getStadiumInfo(match.stadium_id);
       const matchDate = this.parseLocalDate(match.local_date);
       if (!matchDate) continue;
 
@@ -359,9 +360,10 @@ export class FootballApiService implements OnModuleInit {
     if (!datePart) return null;
     const [month, day, year] = datePart.split('/');
     if (!month || !day || !year) return null;
-    const hours = timePart ? timePart.split(':')[0] : '00';
-    const minutes = timePart ? timePart.split(':')[1] : '00';
-    return new Date(+year, +month - 1, +day, +hours, +minutes);
+    const hours = +(timePart ? timePart.split(':')[0] : '0');
+    const minutes = +(timePart ? timePart.split(':')[1] : '0');
+
+    return new Date(+year, +month - 1, +day, hours, minutes);
   }
 
   private parseScore(score: string | number | null | undefined): number {
