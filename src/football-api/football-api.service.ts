@@ -175,7 +175,7 @@ export class FootballApiService implements OnModuleInit {
       }
 
       const stadiumInfo = getStadiumInfo(match.stadium_id);
-      const matchDate = this.parseLocalDate(match.local_date);
+      const matchDate = this.parseLocalDate(match.local_date, stadiumInfo?.utcOffsetHours);
       if (!matchDate) continue;
 
       const phase = this.parsePhase(match.type);
@@ -190,7 +190,8 @@ export class FootballApiService implements OnModuleInit {
         where: {
           teamHome: homeInfo.name,
           teamAway: awayInfo.name,
-          matchDate: matchDate,
+          phase,
+          groupLabel: match.group || null,
         },
       });
 
@@ -262,14 +263,20 @@ export class FootballApiService implements OnModuleInit {
       if (!homeEn || !awayEn) continue;
 
       const stadiumInfo = getStadiumInfo(match.stadium_id);
-      const matchDate = this.parseLocalDate(match.local_date);
+      const matchDate = this.parseLocalDate(match.local_date, stadiumInfo?.utcOffsetHours);
       if (!matchDate) continue;
 
       const homeInfo = getTeamInfo(homeEn);
       const awayInfo = getTeamInfo(awayEn);
 
+      const phase = this.parsePhase(match.type);
       const existing = await this.prisma.match.findFirst({
-        where: { teamHome: homeInfo.name, teamAway: awayInfo.name, matchDate },
+        where: {
+          teamHome: homeInfo.name,
+          teamAway: awayInfo.name,
+          phase,
+          groupLabel: match.group || null,
+        },
       });
 
       if (existing && existing.status !== MatchStatus.FINISHED && matchDate <= new Date()) {
@@ -354,7 +361,7 @@ export class FootballApiService implements OnModuleInit {
     return MatchStatus.SCHEDULED;
   }
 
-  private parseLocalDate(dateStr: string): Date | null {
+  private parseLocalDate(dateStr: string, venueUtcOffsetHours?: number): Date | null {
     if (!dateStr) return null;
     const [datePart, timePart] = dateStr.split(' ');
     if (!datePart) return null;
@@ -362,6 +369,11 @@ export class FootballApiService implements OnModuleInit {
     if (!month || !day || !year) return null;
     const hours = +(timePart ? timePart.split(':')[0] : '0');
     const minutes = +(timePart ? timePart.split(':')[1] : '0');
+
+    if (venueUtcOffsetHours !== undefined) {
+      const utcHours = hours - venueUtcOffsetHours;
+      return new Date(Date.UTC(+year, +month - 1, +day, utcHours, minutes));
+    }
 
     return new Date(+year, +month - 1, +day, hours, minutes);
   }
