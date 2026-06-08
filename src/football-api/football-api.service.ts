@@ -218,11 +218,15 @@ export class FootballApiService implements OnModuleInit {
         const apiHasFinished = match.finished === 'TRUE';
         const matchStillScheduled = existing.status === MatchStatus.SCHEDULED;
 
+        const needsDateUpdate = matchDate.getTime() !== existing.matchDate.getTime();
         const needsUpdate = apiHasFinished && matchStillScheduled;
         const needsPhaseUpdate = !isFinishedWithScores && matchData.phase !== existing.phase;
 
-        if (needsUpdate || needsPhaseUpdate) {
+        if (needsDateUpdate || needsUpdate || needsPhaseUpdate) {
           const updateData: any = {};
+          if (needsDateUpdate) {
+            updateData.matchDate = matchDate;
+          }
           if (needsUpdate) {
             updateData.homeScore = matchData.homeScore;
             updateData.awayScore = matchData.awayScore;
@@ -231,13 +235,11 @@ export class FootballApiService implements OnModuleInit {
           if (needsPhaseUpdate) {
             updateData.phase = matchData.phase;
           }
-          if (Object.keys(updateData).length > 0) {
-            await this.prisma.match.update({
-              where: { id: existing.id },
-              data: updateData,
-            });
-            updatedMatches++;
-          }
+          await this.prisma.match.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+          updatedMatches++;
         }
       } else {
         await this.prisma.match.create({ data: matchData });
