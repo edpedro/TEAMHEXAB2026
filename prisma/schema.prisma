@@ -47,13 +47,11 @@ model Match {
   city       String?         @db.VarChar(100)
   country    String?         @db.VarChar(100)
   matchDate  DateTime        @map("match_date")
-  localDate  String?         @map("local_date") @db.VarChar(30)
   phase      String          @default("Fase de Grupos") @db.VarChar(50)
   groupLabel String?         @map("group_label") @db.VarChar(5)
   homeScore  Int?            @map("home_score")
   awayScore  Int?            @map("away_score")
   status     MatchStatus     @default(SCHEDULED)
-  createdAt  DateTime        @default(now()) @map("created_at")
 
   predictions Prediction[]
 
