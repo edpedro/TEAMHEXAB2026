@@ -82,6 +82,11 @@ export class AdminController {
     return this.adminService.setResult(matchId, homeScore, awayScore);
   }
 
+  @Post('matches/reset-finished')
+  resetFinished() {
+    return this.adminService.resetFinishedMatches();
+  }
+
   @Post('knockout/unlock')
   unlockKnockout() {
     return this.adminService.unlockKnockout();

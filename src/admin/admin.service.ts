@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../common/prisma.service';
@@ -293,6 +293,29 @@ export class AdminService {
       message: `Planilha processada: ${updated} placares atualizados, ${errors.length} erro(s)`,
       updated,
       errors: errors.length > 0 ? errors : undefined,
+    };
+  }
+
+  async resetFinishedMatches() {
+    const now = new Date();
+    const matches = await this.prisma.match.findMany({
+      where: { status: 'FINISHED', matchDate: { gt: now } },
+    });
+
+    for (const match of matches) {
+      await this.prisma.match.update({
+        where: { id: match.id },
+        data: { status: 'SCHEDULED', homeScore: null, awayScore: null },
+      });
+    }
+
+    const logger = new Logger('AdminService');
+    logger.log(`${matches.length} partidas com data futura reiniciadas para SCHEDULED`);
+
+    return {
+      success: true,
+      message: `${matches.length} partidas reiniciadas para SCHEDULED`,
+      matches: matches.map(m => ({ id: m.id, teamHome: m.teamHome, teamAway: m.teamAway, matchDate: m.matchDate })),
     };
   }
 }

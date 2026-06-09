@@ -7,14 +7,14 @@ import { PrismaService } from '../common/prisma.service';
 import { CreatePredictionDto } from './dto/create-prediction.dto';
 import { UpdatePredictionDto } from './dto/update-prediction.dto';
 
-export const PREDICTION_LOCK_HOURS = 30;
+export const PREDICTION_LOCK_MINUTES = 30;
 
 @Injectable()
 export class PredictionsService {
   constructor(private prisma: PrismaService) {}
 
   private getLockDeadline(matchDate: Date): Date {
-    return new Date(matchDate.getTime() - PREDICTION_LOCK_HOURS * 60 * 60 * 1000);
+    return new Date(matchDate.getTime() - PREDICTION_LOCK_MINUTES * 60 * 1000);
   }
 
   async create(userId: string, dto: CreatePredictionDto) {
@@ -29,7 +29,7 @@ export class PredictionsService {
     const lockDeadline = this.getLockDeadline(match.matchDate);
     if (new Date() >= lockDeadline) {
       throw new ForbiddenException(
-        `Palpites encerrados para esta partida. O prazo final era ${lockDeadline.toLocaleString('pt-BR')} (${PREDICTION_LOCK_HOURS}h antes do jogo).`,
+        `Palpites encerrados para esta partida. O prazo final era ${lockDeadline.toLocaleString('pt-BR')} (${PREDICTION_LOCK_MINUTES}min antes do jogo).`,
       );
     }
 
@@ -121,7 +121,7 @@ export class PredictionsService {
     const lockDeadline = this.getLockDeadline(prediction.match.matchDate);
     if (new Date() >= lockDeadline) {
       throw new ForbiddenException(
-        `Prazo encerrado para alterar o palpite (${PREDICTION_LOCK_HOURS}h antes do jogo).`,
+        `Prazo encerrado para alterar o palpite (${PREDICTION_LOCK_MINUTES}min antes do jogo).`,
       );
     }
 
