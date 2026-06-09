@@ -59,14 +59,19 @@ export class ScoringService {
     const actualIsDraw = actualHome === actualAway;
     const predictedIsDraw = predictedHome === predictedAway;
 
-    if (actualIsDraw || predictedIsDraw) {
-      return 0;
+    if (!actualIsDraw && !predictedIsDraw) {
+      const actualWinner = actualHome > actualAway ? 'home' : 'away';
+      const predictedWinner = predictedHome > predictedAway ? 'home' : 'away';
+      if (actualWinner === predictedWinner) {
+        return 3;
+      }
     }
 
-    const actualWinner = actualHome > actualAway ? 'home' : 'away';
-    const predictedWinner = predictedHome > predictedAway ? 'home' : 'away';
+    if (actualIsDraw && predictedIsDraw) {
+      return 1;
+    }
 
-    return actualWinner === predictedWinner ? 3 : 0;
+    return 0;
   }
 
   async recalculateAll() {

@@ -82,9 +82,14 @@ describe('ScoringService', () => {
       expect(result).toBe(0);
     });
 
-    it('deve retornar 0 quando jogo é empate e palpite empate com placar diferente', () => {
+    it('deve retornar 1 ponto para empate com placar diferente', () => {
       const result = (service as any).calculatePoints(1, 1, 0, 0);
-      expect(result).toBe(0);
+      expect(result).toBe(1);
+    });
+
+    it('deve retornar 1 ponto para empate 2-2 com palpite 0-0', () => {
+      const result = (service as any).calculatePoints(2, 2, 0, 0);
+      expect(result).toBe(1);
     });
 
     it('deve retornar 0 quando jogo e palpite tem vencedores opostos', () => {
