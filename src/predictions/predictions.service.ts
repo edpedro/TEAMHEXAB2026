@@ -29,7 +29,7 @@ export class PredictionsService {
     const lockDeadline = this.getLockDeadline(match.matchDate);
     if (new Date() > lockDeadline) {
       throw new ForbiddenException(
-        `Palpites encerrados para esta partida. O prazo final era ${lockDeadline.toLocaleString('pt-BR')} (${PREDICTION_LOCK_MINUTES}min antes do jogo).`,
+        `Palpites encerrados para esta partida. O prazo final era ${lockDeadline.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} (${PREDICTION_LOCK_MINUTES}min antes do jogo).`,
       );
     }
 

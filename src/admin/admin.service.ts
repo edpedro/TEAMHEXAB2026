@@ -7,6 +7,7 @@ import { GamificationService } from '../gamification/gamification.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ScoringService } from './scoring.service';
 import { RankingService } from '../ranking/ranking.service';
+import { RankingGateway } from '../ranking/ranking.gateway';
 import { ReceiptsService } from '../receipts/receipts.service';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class AdminService {
     private notificationsService: NotificationsService,
     private scoringService: ScoringService,
     private rankingService: RankingService,
+    private rankingGateway: RankingGateway,
     private receiptsService: ReceiptsService,
   ) {}
 
@@ -201,9 +203,9 @@ export class AdminService {
   generateExcelTemplate(): Buffer {
     const wb = XLSX.utils.book_new();
 
-    const headers = ['Seleção A', 'Placar A', 'Seleção B', 'Placar B', 'Data (opcional)'];
+    const headers = ['Seleção A', 'Placar A', 'Seleção B', 'Placar B', 'Data (opcional)', 'Fase (opcional)', 'Grupo (opcional)'];
 
-    const exampleRow = ['Brasil', 2, 'Sérvia', 0, '2026-06-15'];
+    const exampleRow = ['Brasil', 2, 'Sérvia', 0, '2026-06-15', 'Fase de Grupos', 'G'];
 
     const ws = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
     ws['!cols'] = [
@@ -212,6 +214,8 @@ export class AdminService {
       { wch: 25 },
       { wch: 12 },
       { wch: 15 },
+      { wch: 22 },
+      { wch: 10 },
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Partidas');
@@ -241,6 +245,8 @@ export class AdminService {
         const selB = (row['Seleção B'] ?? '').toString().trim();
         const placarB = row['Placar B'];
         const dataStr = (row['Data (opcional)'] ?? '').toString().trim();
+        const faseStr = (row['Fase (opcional)'] ?? '').toString().trim();
+        const grupoStr = (row['Grupo (opcional)'] ?? '').toString().trim();
 
         const timeA = String(selA).trim();
         const timeB = String(selB).trim();
@@ -263,6 +269,17 @@ export class AdminService {
           continue;
         }
 
+        const baseWhere: any = {
+          OR: [
+            { teamHome: timeA, teamAway: timeB },
+            { teamHome: timeB, teamAway: timeA },
+          ],
+          status: { not: 'FINISHED' },
+        };
+
+        if (faseStr) baseWhere.phase = faseStr;
+        if (grupoStr) baseWhere.groupLabel = grupoStr;
+
         let match = null;
 
         if (dataStr) {
@@ -270,11 +287,7 @@ export class AdminService {
           if (!isNaN(matchDate.getTime())) {
             match = await this.prisma.match.findFirst({
               where: {
-                OR: [
-                  { teamHome: timeA, teamAway: timeB },
-                  { teamHome: timeB, teamAway: timeA },
-                ],
-                status: { not: 'FINISHED' },
+                ...baseWhere,
                 matchDate: {
                   gte: new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate()),
                   lt: new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate() + 1),
@@ -286,13 +299,7 @@ export class AdminService {
 
         if (!match) {
           match = await this.prisma.match.findFirst({
-            where: {
-              OR: [
-                { teamHome: timeA, teamAway: timeB },
-                { teamHome: timeB, teamAway: timeA },
-              ],
-              status: { not: 'FINISHED' },
-            },
+            where: baseWhere,
             orderBy: { matchDate: 'asc' },
           });
 
@@ -337,9 +344,9 @@ export class AdminService {
   }
 
   async resetFinishedMatches() {
-    const now = new Date();
+    const utcNow = new Date().toISOString();
     const matches = await this.prisma.match.findMany({
-      where: { status: 'FINISHED', matchDate: { gt: now } },
+      where: { status: 'FINISHED', matchDate: { gt: utcNow } },
     });
 
     const matchIds = matches.map(m => m.id);
@@ -357,6 +364,9 @@ export class AdminService {
         data: { status: 'SCHEDULED', homeScore: null, awayScore: null },
       });
     }
+
+    const ranking = await this.rankingService.getRanking();
+    this.rankingGateway.emitRankingUpdate(ranking);
 
     const logger = new Logger('AdminService');
     logger.log(`${matches.length} partidas com data futura reiniciadas para SCHEDULED`);

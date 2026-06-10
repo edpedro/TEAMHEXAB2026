@@ -40,6 +40,7 @@ export class FootballApiService implements OnModuleInit {
 
   private lastFullSync: Date | null = null;
   private lastResultsSync: Date | null = null;
+  private isSyncing = false;
 
   constructor(
     private config: ConfigService,
@@ -214,13 +215,14 @@ export class FootballApiService implements OnModuleInit {
       };
 
       if (existing) {
-        const isFinishedWithScores = existing.status === MatchStatus.FINISHED && existing.homeScore !== null && existing.awayScore !== null;
+        const isFinished = existing.status === MatchStatus.FINISHED;
+        const isFinishedWithScores = isFinished && existing.homeScore !== null && existing.awayScore !== null;
         const apiHasFinished = match.finished === 'TRUE';
         const matchStillScheduled = existing.status === MatchStatus.SCHEDULED;
 
-        const needsDateUpdate = matchDate.getTime() !== existing.matchDate.getTime();
+        const needsDateUpdate = !isFinished && matchDate.getTime() !== existing.matchDate.getTime();
         const needsUpdate = apiHasFinished && matchStillScheduled;
-        const needsPhaseUpdate = !isFinishedWithScores && matchData.phase !== existing.phase;
+        const needsPhaseUpdate = !isFinished && matchData.phase !== existing.phase;
 
         if (needsDateUpdate || needsUpdate || needsPhaseUpdate) {
           const updateData: any = {};
@@ -335,21 +337,35 @@ export class FootballApiService implements OnModuleInit {
 
   @Cron('*/30 * * * *')
   async handleCronResults() {
+    if (this.isSyncing) {
+      this.logger.warn('CRON resultados ignorado — sync em andamento');
+      return;
+    }
+    this.isSyncing = true;
     this.logger.log('CRON: verificando resultados...');
     try {
       await this.syncResults();
     } catch (err) {
       this.logger.error('CRON resultados falhou:', err.message);
+    } finally {
+      this.isSyncing = false;
     }
   }
 
   @Cron('0 */6 * * *')
   async handleCronFullSync() {
+    if (this.isSyncing) {
+      this.logger.warn('CRON sync completo ignorado — sync em andamento');
+      return;
+    }
+    this.isSyncing = true;
     this.logger.log('CRON: sincronização completa...');
     try {
       await this.syncAll();
     } catch (err) {
       this.logger.error('CRON sync completo falhou:', err.message);
+    } finally {
+      this.isSyncing = false;
     }
   }
 
@@ -377,7 +393,7 @@ export class FootballApiService implements OnModuleInit {
       return new Date(Date.UTC(+year, +month - 1, +day, utcHours, minutes));
     }
 
-    return new Date(+year, +month - 1, +day, hours, minutes);
+    return new Date(Date.UTC(+year, +month - 1, +day, hours, minutes));
   }
 
   private parseScore(score: string | number | null | undefined): number {
