@@ -35,14 +35,17 @@ async findAll() {
     });
   }
 
-  async changeRole(id: string, newRole: Role) {
+  async changeRole(id: string, newRole: Role, currentUserId: string) {
+    if (id === currentUserId) {
+      throw new BadRequestException('Não é possível alterar seu próprio perfil de administrador');
+    }
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
-    const lastAdmin = user.role === 'ADMIN' && newRole === 'USER'
-      ? await this.prisma.user.count({ where: { role: 'ADMIN', isActive: true } })
-      : 0;
-    if (lastAdmin <= 1 && user.role === 'ADMIN' && newRole === 'USER') {
-      throw new BadRequestException('Não é possível remover o último administrador');
+    if (user.role === 'ADMIN' && newRole === 'USER') {
+      const adminCount = await this.prisma.user.count({ where: { role: 'ADMIN', isActive: true } });
+      if (adminCount <= 1) {
+        throw new BadRequestException('Não é possível remover o último administrador');
+      }
     }
     return this.prisma.user.update({
       where: { id }, data: { role: newRole },

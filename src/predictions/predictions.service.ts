@@ -27,7 +27,7 @@ export class PredictionsService {
     }
 
     const lockDeadline = this.getLockDeadline(match.matchDate);
-    if (new Date() >= lockDeadline) {
+    if (new Date() > lockDeadline) {
       throw new ForbiddenException(
         `Palpites encerrados para esta partida. O prazo final era ${lockDeadline.toLocaleString('pt-BR')} (${PREDICTION_LOCK_MINUTES}min antes do jogo).`,
       );
@@ -119,7 +119,7 @@ export class PredictionsService {
     }
 
     const lockDeadline = this.getLockDeadline(prediction.match.matchDate);
-    if (new Date() >= lockDeadline) {
+    if (new Date() > lockDeadline) {
       throw new ForbiddenException(
         `Prazo encerrado para alterar o palpite (${PREDICTION_LOCK_MINUTES}min antes do jogo).`,
       );

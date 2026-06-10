@@ -40,6 +40,9 @@ export class RankingService {
       const exactHits = user.predictions.filter(
         (p) => p.pointsEarned === 5,
       ).length;
+      const winnerHits = user.predictions.filter(
+        (p) => (p.pointsEarned || 0) >= 3 && p.pointsEarned !== 5,
+      ).length;
       const firstPredictionAt = user.predictions[0]?.createdAt ?? null;
       return {
         id: user.id,
@@ -51,6 +54,7 @@ export class RankingService {
         firstPredictionAt,
         score: totalScore,
         exactHits,
+        winnerHits,
         achievements: user._count.userAchievements,
       };
     });
@@ -65,6 +69,7 @@ export class RankingService {
         hasPaid: user.hasPaid,
         score: user.score,
         exactHits: user.exactHits,
+        winnerHits: user.winnerHits,
         achievements: user.achievements,
       }));
 
@@ -80,15 +85,16 @@ export class RankingService {
     return users.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       if (b.exactHits !== a.exactHits) return b.exactHits - a.exactHits;
-      const paidA = a.paidAt?.getTime() ?? Infinity;
-      const paidB = b.paidAt?.getTime() ?? Infinity;
-      if (paidA !== paidB) return paidA - paidB;
+      if (b.winnerHits !== a.winnerHits) return b.winnerHits - a.winnerHits;
+      const firstA = a.firstPredictionAt?.getTime() ?? 0;
+      const firstB = b.firstPredictionAt?.getTime() ?? 0;
+      if (firstB !== firstA) return firstB - firstA;
+      const paidA = a.paidAt?.getTime() ?? 0;
+      const paidB = b.paidAt?.getTime() ?? 0;
+      if (paidB !== paidA) return paidB - paidA;
       const createdA = a.createdAt.getTime();
       const createdB = b.createdAt.getTime();
-      if (createdA !== createdB) return createdA - createdB;
-      const firstA = a.firstPredictionAt?.getTime() ?? Infinity;
-      const firstB = b.firstPredictionAt?.getTime() ?? Infinity;
-      return firstA - firstB;
+      return createdB - createdA;
     });
   }
 
@@ -114,6 +120,7 @@ export class RankingService {
         id: u.id,
         score: u.predictions.reduce((s, p) => s + (p.pointsEarned || 0), 0),
         exactHits: u.predictions.filter((p) => p.pointsEarned === 5).length,
+        winnerHits: u.predictions.filter((p) => (p.pointsEarned || 0) >= 3 && p.pointsEarned !== 5).length,
         paidAt: u.paidAt,
         createdAt: u.createdAt,
         firstPredictionAt: u.predictions[0]?.createdAt ?? null,
@@ -189,7 +196,7 @@ export class RankingService {
         '2 qualificados: 1º=70%, 2º=30% (sem 3º lugar).',
         '1 qualificado: 1º=100% (sem 2º ou 3º lugar).',
         'Nenhum qualificado: nenhuma premiação distribuída.',
-        'Critérios de desempate (sequencial): maior pontuação → mais placares exatos → pagamento mais antigo → cadastro mais antigo → primeiro palpite mais antigo.',
+        'Critérios de desempate (sequencial): maior pontuação → mais placares exatos → mais acertos de vencedor → primeiro palpite mais recente → pagamento mais recente → cadastro mais recente.',
         'Não há divisão de prêmio por empate.',
       ],
     };

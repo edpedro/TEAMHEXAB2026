@@ -46,8 +46,12 @@ export class UsersController {
 
   @Patch(':id/role')
   @Roles(Role.ADMIN)
-  changeRole(@Param('id') id: string, @Body() dto: ChangeRoleDto) {
-    return this.usersService.changeRole(id, dto.role);
+  changeRole(
+    @Param('id') id: string,
+    @Body() dto: ChangeRoleDto,
+    @CurrentUser('id') currentUserId: string,
+  ) {
+    return this.usersService.changeRole(id, dto.role, currentUserId);
   }
 
   @Patch(':id/toggle-active')

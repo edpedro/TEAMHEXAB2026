@@ -155,7 +155,7 @@ describe('UsersService', () => {
       mockPrisma.user.findUnique.mockResolvedValue({ ...baseUser, role: 'USER' });
       mockPrisma.user.update.mockResolvedValue({ ...baseUser, role: 'ADMIN' });
 
-      const result = await service.changeRole('1', 'ADMIN');
+      const result = await service.changeRole('1', 'ADMIN', 'admin-id');
       expect(result.role).toBe('ADMIN');
     });
 
@@ -163,7 +163,7 @@ describe('UsersService', () => {
       mockPrisma.user.findUnique.mockResolvedValue({ ...baseUser, role: 'ADMIN' });
       mockPrisma.user.count.mockResolvedValue(1);
 
-      await expect(service.changeRole('1', 'USER')).rejects.toThrow(BadRequestException);
+      await expect(service.changeRole('1', 'USER', 'admin-id')).rejects.toThrow(BadRequestException);
     });
 
     it('deve permitir remover admin se houver outro admin', async () => {
@@ -171,8 +171,12 @@ describe('UsersService', () => {
       mockPrisma.user.count.mockResolvedValue(2);
       mockPrisma.user.update.mockResolvedValue({ ...baseUser, role: 'USER' });
 
-      const result = await service.changeRole('1', 'USER');
+      const result = await service.changeRole('1', 'USER', 'admin-id');
       expect(result.role).toBe('USER');
+    });
+
+    it('não deve permitir auto-demote', async () => {
+      await expect(service.changeRole('1', 'USER', '1')).rejects.toThrow(BadRequestException);
     });
   });
 

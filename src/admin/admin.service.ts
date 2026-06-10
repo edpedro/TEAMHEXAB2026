@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../common/prisma.service';
 import { GamificationService } from '../gamification/gamification.service';
@@ -111,7 +112,7 @@ export class AdminService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    const tempPassword = Math.floor(1000 + Math.random() * 9000).toString();
+    const tempPassword = crypto.randomInt(1000, 10000).toString();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
     await this.prisma.user.update({
@@ -129,6 +130,10 @@ export class AdminService {
   }
 
   async setResult(matchId: string, homeScore: number, awayScore: number) {
+    if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) {
+      throw new BadRequestException('Placar deve ser um número inteiro não-negativo');
+    }
+
     const match = await this.prisma.match.findUnique({
       where: { id: matchId },
     });
@@ -196,9 +201,9 @@ export class AdminService {
   generateExcelTemplate(): Buffer {
     const wb = XLSX.utils.book_new();
 
-    const headers = ['Seleção A', 'Placar A', 'Seleção B', 'Placar B'];
+    const headers = ['Seleção A', 'Placar A', 'Seleção B', 'Placar B', 'Data (opcional)'];
 
-    const exampleRow = ['Brasil', 2, 'Sérvia', 0];
+    const exampleRow = ['Brasil', 2, 'Sérvia', 0, '2026-06-15'];
 
     const ws = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
     ws['!cols'] = [
@@ -206,6 +211,7 @@ export class AdminService {
       { wch: 12 },
       { wch: 25 },
       { wch: 12 },
+      { wch: 15 },
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Partidas');
@@ -221,6 +227,7 @@ export class AdminService {
       throw new BadRequestException('Planilha vazia ou formato inválido');
     }
 
+    const logger = new Logger('AdminService');
     const errors: { row: number; message: string }[] = [];
     let updated = 0;
 
@@ -233,6 +240,7 @@ export class AdminService {
         const placarA = row['Placar A'];
         const selB = (row['Seleção B'] ?? '').toString().trim();
         const placarB = row['Placar B'];
+        const dataStr = (row['Data (opcional)'] ?? '').toString().trim();
 
         const timeA = String(selA).trim();
         const timeB = String(selB).trim();
@@ -250,16 +258,48 @@ export class AdminService {
           continue;
         }
 
-        const match = await this.prisma.match.findFirst({
-          where: {
-            OR: [
-              { teamHome: timeA, teamAway: timeB },
-              { teamHome: timeB, teamAway: timeA },
-            ],
-            status: { not: 'FINISHED' },
-          },
-          orderBy: { matchDate: 'asc' },
-        });
+        if (!Number.isInteger(golsA) || !Number.isInteger(golsB) || golsA < 0 || golsB < 0) {
+          errors.push({ row: rowNum, message: `Placar deve ser um número inteiro não-negativo: "${placarA}" x "${placarB}"` });
+          continue;
+        }
+
+        let match = null;
+
+        if (dataStr) {
+          const matchDate = new Date(dataStr);
+          if (!isNaN(matchDate.getTime())) {
+            match = await this.prisma.match.findFirst({
+              where: {
+                OR: [
+                  { teamHome: timeA, teamAway: timeB },
+                  { teamHome: timeB, teamAway: timeA },
+                ],
+                status: { not: 'FINISHED' },
+                matchDate: {
+                  gte: new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate()),
+                  lt: new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate() + 1),
+                },
+              },
+            });
+          }
+        }
+
+        if (!match) {
+          match = await this.prisma.match.findFirst({
+            where: {
+              OR: [
+                { teamHome: timeA, teamAway: timeB },
+                { teamHome: timeB, teamAway: timeA },
+              ],
+              status: { not: 'FINISHED' },
+            },
+            orderBy: { matchDate: 'asc' },
+          });
+
+          if (dataStr && match) {
+            logger.warn(`Linha ${rowNum}: Data "${dataStr}" não encontrada, usando primeira partida pendente entre "${timeA}" e "${timeB}"`);
+          }
+        }
 
         if (!match) {
           errors.push({
@@ -301,6 +341,15 @@ export class AdminService {
     const matches = await this.prisma.match.findMany({
       where: { status: 'FINISHED', matchDate: { gt: now } },
     });
+
+    const matchIds = matches.map(m => m.id);
+
+    if (matchIds.length > 0) {
+      await this.prisma.prediction.updateMany({
+        where: { matchId: { in: matchIds } },
+        data: { pointsEarned: 0 },
+      });
+    }
 
     for (const match of matches) {
       await this.prisma.match.update({

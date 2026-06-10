@@ -106,5 +106,72 @@ describe('ScoringService', () => {
       const result = (service as any).calculatePoints(2, 1, 0, 0);
       expect(result).toBe(0);
     });
+
+    // --- Cenários específicos do plano de auditoria ---
+
+    // Placar exato
+    it('deve retornar 5 pontos para palpite 3x3 com resultado 3x3', () => {
+      const result = (service as any).calculatePoints(3, 3, 3, 3);
+      expect(result).toBe(5);
+    });
+
+    it('deve retornar 5 pontos para palpite 2x1 com resultado 2x1', () => {
+      const result = (service as any).calculatePoints(2, 1, 2, 1);
+      expect(result).toBe(5);
+    });
+
+    // Acertou vencedor
+    it('deve retornar 3 pontos: Brasil 2x1 Argentina, resultado Brasil 1x0', () => {
+      const result = (service as any).calculatePoints(1, 0, 2, 1);
+      expect(result).toBe(3);
+    });
+
+    it('deve retornar 3 pontos: Brasil 3x0 Argentina, resultado Brasil 2x1', () => {
+      const result = (service as any).calculatePoints(2, 1, 3, 0);
+      expect(result).toBe(3);
+    });
+
+    // Acertou empate
+    it('deve retornar 1 ponto: palpite 1x1, resultado 0x0', () => {
+      const result = (service as any).calculatePoints(0, 0, 1, 1);
+      expect(result).toBe(1);
+    });
+
+    it('deve retornar 1 ponto: palpite 2x2, resultado 1x1', () => {
+      const result = (service as any).calculatePoints(1, 1, 2, 2);
+      expect(result).toBe(1);
+    });
+
+    it('deve retornar 1 ponto: palpite 3x3, resultado 2x2', () => {
+      const result = (service as any).calculatePoints(2, 2, 3, 3);
+      expect(result).toBe(1);
+    });
+
+    // Resultado incorreto
+    it('deve retornar 0: Brasil 2x1 Argentina, resultado Argentina 1x0', () => {
+      const result = (service as any).calculatePoints(0, 1, 2, 1);
+      expect(result).toBe(0);
+    });
+
+    it('deve retornar 0: palpite 1x1, resultado 2x1', () => {
+      const result = (service as any).calculatePoints(2, 1, 1, 1);
+      expect(result).toBe(0);
+    });
+
+    // Ordem obrigatória de validação
+    it('deve priorizar placar exato sobre vencedor (5 > 3)', () => {
+      const result = (service as any).calculatePoints(2, 1, 2, 1);
+      expect(result).toBe(5);
+    });
+
+    it('deve priorizar vencedor sobre draw (3 > 1)', () => {
+      const result = (service as any).calculatePoints(2, 1, 1, 0);
+      expect(result).toBe(3);
+    });
+
+    it('deve retornar 0 quando não encaixa em nenhuma condição', () => {
+      const result = (service as any).calculatePoints(3, 1, 0, 2);
+      expect(result).toBe(0);
+    });
   });
 });
