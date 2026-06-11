@@ -15,6 +15,7 @@ import { GamificationModule } from './gamification/gamification.module';
 import { FootballApiModule } from './football-api/football-api.module';
 import { TopScorersModule } from './top-scorers/top-scorers.module';
 import { ReceiptsModule } from './receipts/receipts.module';
+import { WorldcupModule } from './worldcup/worldcup.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ReceiptsModule } from './receipts/receipts.module';
     FootballApiModule,
     TopScorersModule,
     ReceiptsModule,
+    WorldcupModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

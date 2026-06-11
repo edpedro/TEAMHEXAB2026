@@ -23,15 +23,14 @@ export class AuthController {
   }
 
   @Post('set-new-password')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   async setNewPassword(
-    @CurrentUser('id') userId: string,
+    @Body('userId') userId: string,
     @Body('newPassword') newPassword: string,
     @Body('confirmPassword') confirmPassword: string,
   ) {
-    if (!newPassword || !confirmPassword) {
+    if (!userId || !newPassword || !confirmPassword) {
       throw new BadRequestException('Todos os campos são obrigatórios');
     }
     if (newPassword !== confirmPassword) {

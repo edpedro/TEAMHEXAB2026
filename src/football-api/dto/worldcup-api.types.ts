@@ -60,10 +60,22 @@ export interface WcStadiumsResponse {
   stadiums: WcStadium[];
 }
 
+export interface WcTeamStanding {
+  team_id: string;
+  mp: string;
+  w: string;
+  l: string;
+  d: string;
+  pts: string;
+  gf: string;
+  ga: string;
+  gd: string;
+}
+
 export interface WcGroup {
   _id?: string;
   name: string;
-  teams?: string;
+  teams?: WcTeamStanding[];
   createdAt?: string;
   __v?: number;
 }

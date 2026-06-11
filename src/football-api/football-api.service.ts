@@ -15,6 +15,7 @@ import {
   WcGamesResponse,
   WcTeamsResponse,
   WcAuthResponse,
+  WcTeamStanding,
   SyncStatus,
 } from './dto/worldcup-api.types';
 import { getTeamInfo } from './dto/team-mapping';
@@ -145,6 +146,42 @@ export class FootballApiService implements OnModuleInit {
       headers: this.getHeaders(),
     });
     return data.stadiums;
+  }
+
+  async fetchStandings() {
+    const [groups, teams] = await Promise.all([
+      this.fetchGroups(),
+      this.fetchTeams(),
+    ]);
+
+    const teamMap = new Map<string, WcTeam>();
+    for (const team of teams) {
+      teamMap.set(team.id, team);
+    }
+
+    return groups.map((group) => ({
+      name: group.name,
+      teams: (group.teams || []).map((standing: WcTeamStanding) => {
+        const team = teamMap.get(standing.team_id);
+        const info = team
+          ? getTeamInfo(team.name_en)
+          : { name: `Time #${standing.team_id}`, flag: '', iso2: '' };
+        return {
+          teamId: standing.team_id,
+          name: info.name,
+          flag: info.flag,
+          iso2: info.iso2,
+          mp: parseInt(standing.mp, 10) || 0,
+          w: parseInt(standing.w, 10) || 0,
+          l: parseInt(standing.l, 10) || 0,
+          d: parseInt(standing.d, 10) || 0,
+          pts: parseInt(standing.pts, 10) || 0,
+          gf: parseInt(standing.gf, 10) || 0,
+          ga: parseInt(standing.ga, 10) || 0,
+          gd: parseInt(standing.gd, 10) || 0,
+        };
+      }),
+    }));
   }
 
   async fetchHealth() {
