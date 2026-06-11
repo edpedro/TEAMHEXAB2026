@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -143,15 +143,48 @@ describe('Validações de Input', () => {
     });
   });
 
-  describe('V07-V08 — Validação de senha (AuthController.setNewPassword)', () => {
-    it('V07 — Senha nova < 6 chars deve lançar BadRequest', () => {
-      const newPassword = '12345';
-      expect(newPassword.length < 6).toBe(true);
+  describe('V07-V08 — setNewPassword no AuthService', () => {
+    let authService: AuthService;
+    let prisma: any;
+
+    beforeEach(async () => {
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(false as never);
+      prisma = { user: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() } };
+      const mockJwt = { sign: jest.fn().mockReturnValue('t') };
+      const mockCfg = { get: jest.fn((k: string, d?: any) => k === 'JWT_REFRESH_SECRET' ? 's' : k === 'JWT_REFRESH_EXPIRATION' ? '3650d' : d) };
+
+      const mod = await Test.createTestingModule({
+        providers: [AuthService, { provide: PrismaService, useValue: prisma }, { provide: JwtService, useValue: mockJwt }, { provide: ConfigService, useValue: mockCfg }],
+      }).compile();
+      authService = mod.get(AuthService);
     });
 
-    it('V08 — Senha apenas espaços', () => {
-      const newPassword = '      ';
-      expect(newPassword.trim().length).toBe(0);
+    it('V07 — Senha < 6 chars → BadRequest', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', isTempPassword: true, passwordHash: '$2a$10$h' });
+      await expect(authService.setNewPassword('u1', '12345')).rejects.toThrow(BadRequestException);
+    });
+
+    it('V08 — Usuário sem senha temporária → BadRequest', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', isTempPassword: false, passwordHash: '$2a$10$h' });
+      await expect(authService.setNewPassword('u1', '123456')).rejects.toThrow(BadRequestException);
+    });
+
+    it('V08b — Senha igual à temporária → BadRequest', async () => {
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', isTempPassword: true, passwordHash: '$2a$10$h' });
+      await expect(authService.setNewPassword('u1', '123456')).rejects.toThrow(BadRequestException);
+    });
+
+    it('V08c — Usuário inexistente → Unauthorized', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(authService.setNewPassword('999', '123456')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('V08d — Sucesso com senha válida', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', isTempPassword: true, passwordHash: '$2a$10$h' });
+      prisma.user.update.mockResolvedValue({});
+      const r = await authService.setNewPassword('u1', 'nova-senha-forte');
+      expect(r.message).toContain('Senha alterada');
     });
   });
 

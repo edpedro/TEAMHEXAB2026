@@ -85,6 +85,44 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
     });
   });
 
+  describe('E02b — Login com senha temporária (sem token)', () => {
+    it('deve retornar needsNewPassword sem accessToken', async () => {
+      const p = mkPrisma();
+      p.user.findUnique.mockResolvedValue({ ...baseUser, isTempPassword: true });
+
+      const mod = await Test.createTestingModule({
+        providers: [AuthService, { provide: PrismaService, useValue: p }, { provide: JwtService, useValue: mockJwt }, { provide: ConfigService, useValue: mockConfig }],
+      }).compile();
+      const auth = mod.get(AuthService);
+
+      const r: any = await auth.login({ username: 'joao', password: 'senha123' });
+      expect(r.needsNewPassword).toBe(true);
+      expect(r.accessToken).toBeUndefined();
+      expect(r.userId).toBe('user-1');
+    });
+  });
+
+  describe('E02c — Troca de senha temporária (sem JWT, apenas userId)', () => {
+    it('deve alterar senha sem exigir token', async () => {
+      jest.spyOn(bcrypt, 'compare').mockResolvedValueOnce(false as never);
+      const p = mkPrisma();
+      p.user.findUnique.mockResolvedValue({ ...baseUser, isTempPassword: true });
+      p.user.update.mockResolvedValue({ ...baseUser, isTempPassword: false });
+
+      const mod = await Test.createTestingModule({
+        providers: [AuthService, { provide: PrismaService, useValue: p }, { provide: JwtService, useValue: mockJwt }, { provide: ConfigService, useValue: mockConfig }],
+      }).compile();
+      const auth = mod.get(AuthService);
+
+      const r = await auth.setNewPassword('user-1', 'nova-senha-segura');
+      expect(r.message).toContain('Senha alterada');
+      expect(p.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { passwordHash: expect.any(String), isTempPassword: false },
+      });
+    });
+  });
+
   describe('E03 — Pagamento (upload comprovante)', () => {
     it('deve criar comprovante com status PENDING', async () => {
       const p = mkPrisma();

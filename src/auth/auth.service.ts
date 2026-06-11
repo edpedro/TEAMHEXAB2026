@@ -76,6 +76,10 @@ export class AuthService {
       throw new UnauthorizedException('Usuário não encontrado');
     }
 
+    if (!newPassword || newPassword.length < 6) {
+      throw new BadRequestException('A nova senha deve ter no mínimo 6 caracteres');
+    }
+
     if (!user.isTempPassword) {
       throw new BadRequestException('Usuário não possui senha temporária');
     }
