@@ -43,7 +43,8 @@ export class RankingService {
       const winnerHits = user.predictions.filter(
         (p) => (p.pointsEarned || 0) >= 3 && p.pointsEarned !== 5,
       ).length;
-      const firstPredictionAt = user.predictions[0]?.createdAt ?? null;
+      const totalPredictions = user.predictions.length;
+      const predictionDates = user.predictions.map((p) => p.createdAt.getTime());
       return {
         id: user.id,
         fullName: user.fullName,
@@ -51,10 +52,11 @@ export class RankingService {
         hasPaid: user.hasPaid,
         paidAt: user.paidAt,
         createdAt: user.createdAt,
-        firstPredictionAt,
+        predictionDates,
         score: totalScore,
         exactHits,
         winnerHits,
+        totalPredictions,
         achievements: user._count.userAchievements,
       };
     });
@@ -70,6 +72,7 @@ export class RankingService {
         score: user.score,
         exactHits: user.exactHits,
         winnerHits: user.winnerHits,
+        totalPredictions: user.totalPredictions,
         achievements: user.achievements,
       }));
 
@@ -86,15 +89,23 @@ export class RankingService {
       if (b.score !== a.score) return b.score - a.score;
       if (b.exactHits !== a.exactHits) return b.exactHits - a.exactHits;
       if (b.winnerHits !== a.winnerHits) return b.winnerHits - a.winnerHits;
-      const firstA = a.firstPredictionAt?.getTime() ?? 0;
-      const firstB = b.firstPredictionAt?.getTime() ?? 0;
-      if (firstB !== firstA) return firstB - firstA;
-      const paidA = a.paidAt?.getTime() ?? 0;
-      const paidB = b.paidAt?.getTime() ?? 0;
-      if (paidB !== paidA) return paidB - paidA;
+      if ((b.totalPredictions ?? 0) !== (a.totalPredictions ?? 0))
+        return (b.totalPredictions ?? 0) - (a.totalPredictions ?? 0);
+      const datesA: number[] = a.predictionDates ?? [];
+      const datesB: number[] = b.predictionDates ?? [];
+      for (let i = 0; i < Math.max(datesA.length, datesB.length); i++) {
+        const dA = i < datesA.length ? datesA[i] : Infinity;
+        const dB = i < datesB.length ? datesB[i] : Infinity;
+        if (dA !== dB) return dA - dB;
+      }
+      const paidA = a.paidAt?.getTime();
+      const paidB = b.paidAt?.getTime();
+      if ((paidA != null) !== (paidB != null)) return paidA != null ? -1 : 1;
+      if (paidA != null && paidB != null && paidA !== paidB) return paidA - paidB;
       const createdA = a.createdAt.getTime();
       const createdB = b.createdAt.getTime();
-      return createdB - createdA;
+      if (createdA !== createdB) return createdA - createdB;
+      return 0;
     });
   }
 
@@ -121,9 +132,10 @@ export class RankingService {
         score: u.predictions.reduce((s, p) => s + (p.pointsEarned || 0), 0),
         exactHits: u.predictions.filter((p) => p.pointsEarned === 5).length,
         winnerHits: u.predictions.filter((p) => (p.pointsEarned || 0) >= 3 && p.pointsEarned !== 5).length,
+        totalPredictions: u.predictions.length,
+        predictionDates: u.predictions.map((p: any) => p.createdAt.getTime()),
         paidAt: u.paidAt,
         createdAt: u.createdAt,
-        firstPredictionAt: u.predictions[0]?.createdAt ?? null,
       }))
       .filter((u) => u.score > 0);
 
@@ -196,7 +208,7 @@ export class RankingService {
         '2 qualificados: 1º=70%, 2º=30% (sem 3º lugar).',
         '1 qualificado: 1º=100% (sem 2º ou 3º lugar).',
         'Nenhum qualificado: nenhuma premiação distribuída.',
-        'Critérios de desempate (sequencial): maior pontuação → mais placares exatos → mais acertos de vencedor → primeiro palpite mais recente → pagamento mais recente → cadastro mais recente.',
+        'Critérios de desempate (sequencial): maior pontuação → mais placares exatos → mais acertos de vencedor → mais palpites realizados → total de palpites mais antigo (comparação sequencial) → pagamento mais antigo → cadastro mais antigo.',
         'Não há divisão de prêmio por empate.',
       ],
     };

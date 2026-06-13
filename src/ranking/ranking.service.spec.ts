@@ -94,10 +94,10 @@ describe('RankingService', () => {
       });
     });
 
-    it('deve desempatar por pagamento mais recente (paidAt)', () => {
+    it('deve desempatar por pagamento mais antigo (paidAt)', () => {
       const users = [
-        makeUser({ id: '1', predictions: [pred(5)], paidAt: new Date('2026-06-05T12:00:00Z'), createdAt: new Date('2026-06-01T12:00:00Z') }),
-        makeUser({ id: '2', predictions: [pred(5)], paidAt: new Date('2026-06-03T12:00:00Z'), createdAt: new Date('2026-06-01T12:00:00Z') }),
+        makeUser({ id: '1', predictions: [pred(5)], paidAt: new Date('2026-06-03T12:00:00Z'), createdAt: new Date('2026-06-01T12:00:00Z') }),
+        makeUser({ id: '2', predictions: [pred(5)], paidAt: new Date('2026-06-05T12:00:00Z'), createdAt: new Date('2026-06-01T12:00:00Z') }),
       ];
       mockPrisma.systemConfig.findFirst.mockResolvedValue({ betAmount: 20 });
       mockPrisma.user.count.mockResolvedValue(2);
@@ -110,10 +110,10 @@ describe('RankingService', () => {
       });
     });
 
-    it('deve desempatar por cadastro mais recente (createdAt)', () => {
+    it('deve desempatar por cadastro mais antigo (createdAt)', () => {
       const users = [
-        makeUser({ id: '1', predictions: [pred(5)], paidAt: null, createdAt: new Date('2026-06-05T12:00:00Z') }),
-        makeUser({ id: '2', predictions: [pred(5)], paidAt: null, createdAt: new Date('2026-06-03T12:00:00Z') }),
+        makeUser({ id: '1', predictions: [pred(5)], paidAt: null, createdAt: new Date('2026-06-03T12:00:00Z') }),
+        makeUser({ id: '2', predictions: [pred(5)], paidAt: null, createdAt: new Date('2026-06-05T12:00:00Z') }),
       ];
       mockPrisma.systemConfig.findFirst.mockResolvedValue({ betAmount: 20 });
       mockPrisma.user.count.mockResolvedValue(2);
@@ -126,14 +126,14 @@ describe('RankingService', () => {
       });
     });
 
-    it('deve desempatar por primeiro palpite mais recente (firstPredictionAt)', () => {
+    it('deve desempatar por primeiro palpite mais antigo (firstPredictionAt)', () => {
       const users = [
         makeUser({
-          id: '1', predictions: [pred(5, '2026-06-05T12:00:00Z')],
+          id: '1', predictions: [pred(5, '2026-06-03T12:00:00Z')],
           paidAt: null, createdAt: new Date('2026-06-01T12:00:00Z'),
         }),
         makeUser({
-          id: '2', predictions: [pred(5, '2026-06-03T12:00:00Z')],
+          id: '2', predictions: [pred(5, '2026-06-05T12:00:00Z')],
           paidAt: null, createdAt: new Date('2026-06-01T12:00:00Z'),
         }),
       ];
@@ -230,8 +230,8 @@ describe('RankingService', () => {
 
     it('deve retornar vazio se nenhum qualifier tiver score > 0', async () => {
       mockPrisma.user.findMany.mockResolvedValue([
-        { id: '1', predictions: [{ pointsEarned: 0 }, { pointsEarned: 0 }] },
-        { id: '2', predictions: [{ pointsEarned: 0 }] },
+        { id: '1', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 0, createdAt: new Date() }, { pointsEarned: 0, createdAt: new Date() }] },
+        { id: '2', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 0, createdAt: new Date() }] },
       ]);
       const result = await (service as any).calculatePrizes(100);
       expect(result).toEqual({});
@@ -239,8 +239,8 @@ describe('RankingService', () => {
 
     it('deve dar 100% para único qualificador — R$1000', async () => {
       mockPrisma.user.findMany.mockResolvedValue([
-        { id: '1', predictions: [{ pointsEarned: 10 }] },
-        { id: '2', predictions: [{ pointsEarned: 0 }] },
+        { id: '1', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 10, createdAt: new Date() }] },
+        { id: '2', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 0, createdAt: new Date() }] },
       ]);
       const result = await (service as any).calculatePrizes(1000);
       expect(result['1']).toBe(1000);
@@ -249,8 +249,8 @@ describe('RankingService', () => {
 
     it('deve dividir 70/30 entre 2 qualificadores', async () => {
       mockPrisma.user.findMany.mockResolvedValue([
-        { id: '1', predictions: [{ pointsEarned: 10 }] },
-        { id: '2', predictions: [{ pointsEarned: 5 }] },
+        { id: '1', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 10, createdAt: new Date() }] },
+        { id: '2', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 5, createdAt: new Date() }] },
       ]);
       const result = await (service as any).calculatePrizes(1000);
       expect(result['1']).toBe(700);
@@ -261,9 +261,9 @@ describe('RankingService', () => {
 
     it('deve dividir 60/25/15 entre 3 qualificadores — R$1000', async () => {
       mockPrisma.user.findMany.mockResolvedValue([
-        { id: '1', predictions: [{ pointsEarned: 15 }] },
-        { id: '2', predictions: [{ pointsEarned: 10 }] },
-        { id: '3', predictions: [{ pointsEarned: 5 }] },
+        { id: '1', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 15, createdAt: new Date() }] },
+        { id: '2', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 10, createdAt: new Date() }] },
+        { id: '3', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 5, createdAt: new Date() }] },
       ]);
       const result = await (service as any).calculatePrizes(1000);
       expect(result['1']).toBe(600);
@@ -275,10 +275,10 @@ describe('RankingService', () => {
 
     it('deve distribuir apenas top 3 quando há 4+ qualificadores', async () => {
       mockPrisma.user.findMany.mockResolvedValue([
-        { id: '1', predictions: [{ pointsEarned: 20 }] },
-        { id: '2', predictions: [{ pointsEarned: 15 }] },
-        { id: '3', predictions: [{ pointsEarned: 10 }] },
-        { id: '4', predictions: [{ pointsEarned: 5 }] },
+        { id: '1', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 20, createdAt: new Date() }] },
+        { id: '2', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 15, createdAt: new Date() }] },
+        { id: '3', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 10, createdAt: new Date() }] },
+        { id: '4', paidAt: null, createdAt: new Date(), predictions: [{ pointsEarned: 5, createdAt: new Date() }] },
       ]);
       const result = await (service as any).calculatePrizes(1000);
       expect(Object.keys(result)).toHaveLength(3);
@@ -288,12 +288,12 @@ describe('RankingService', () => {
   describe('getUserPosition', () => {
     it('deve retornar entry do usuário no ranking', async () => {
       jest.spyOn(service, 'getRanking').mockResolvedValue([
-        { position: 1, id: '1', fullName: 'A', username: 'a', hasPaid: true, score: 10, exactHits: 2, winnerHits: 1, achievements: 0, prize: 10 },
-        { position: 2, id: '2', fullName: 'B', username: 'b', hasPaid: false, score: 5, exactHits: 1, winnerHits: 0, achievements: 0, prize: 0 },
+        { position: 1, id: '1', fullName: 'A', username: 'a', hasPaid: true, score: 10, exactHits: 2, winnerHits: 1, totalPredictions: 3, achievements: 0, prize: 10 },
+        { position: 2, id: '2', fullName: 'B', username: 'b', hasPaid: false, score: 5, exactHits: 1, winnerHits: 0, totalPredictions: 2, achievements: 0, prize: 0 },
       ]);
       const result = await service.getUserPosition('1');
       expect(result).toEqual({
-        position: 1, id: '1', fullName: 'A', username: 'a', hasPaid: true, score: 10, exactHits: 2, winnerHits: 1, achievements: 0, prize: 10,
+        position: 1, id: '1', fullName: 'A', username: 'a', hasPaid: true, score: 10, exactHits: 2, winnerHits: 1, totalPredictions: 3, achievements: 0, prize: 10,
       });
     });
 
@@ -325,8 +325,8 @@ describe('RankingService', () => {
   describe('recordDailySnapshot', () => {
     it('deve criar histórico para cada entry', async () => {
       jest.spyOn(service, 'getRanking').mockResolvedValue([
-        { position: 1, id: '1', fullName: 'A', username: 'a', hasPaid: true, score: 10, exactHits: 2, winnerHits: 1, achievements: 0, prize: 10 },
-        { position: 2, id: '2', fullName: 'B', username: 'b', hasPaid: false, score: 5, exactHits: 1, winnerHits: 0, achievements: 0, prize: 0 },
+        { position: 1, id: '1', fullName: 'A', username: 'a', hasPaid: true, score: 10, exactHits: 2, winnerHits: 1, totalPredictions: 3, achievements: 0, prize: 10 },
+        { position: 2, id: '2', fullName: 'B', username: 'b', hasPaid: false, score: 5, exactHits: 1, winnerHits: 0, totalPredictions: 2, achievements: 0, prize: 0 },
       ]);
       await service.recordDailySnapshot();
       expect(mockPrisma.rankingHistory.create).toHaveBeenCalledTimes(2);
