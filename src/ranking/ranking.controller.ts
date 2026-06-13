@@ -32,4 +32,20 @@ export class RankingController {
   getPrizeRules() {
     return this.rankingService.getPrizeRules();
   }
+
+  @Get(':userId/predictions')
+  getUserPredictions(
+    @Param('userId') userId: string,
+    @Query('phase') phase?: string,
+    @Query('groupLabel') groupLabel?: string,
+    @Query('team') team?: string,
+    @Query('points') points?: string,
+  ) {
+    return this.rankingService.getUserPredictions(userId, {
+      phase,
+      groupLabel,
+      team,
+      points: points ? +points : undefined,
+    });
+  }
 }

@@ -182,6 +182,85 @@ export class RankingService {
     });
   }
 
+  async getUserPredictions(userId: string, filters?: {
+    phase?: string;
+    groupLabel?: string;
+    team?: string;
+    points?: number;
+  }) {
+    const where: any = {
+      userId,
+      match: {
+        status: 'FINISHED',
+        homeScore: { not: null },
+        awayScore: { not: null },
+      },
+    };
+
+    if (filters?.phase) where.match.phase = filters.phase;
+    if (filters?.groupLabel) where.match.groupLabel = filters.groupLabel;
+    if (filters?.team) {
+      where.match.OR = [
+        { teamHome: { contains: filters.team, mode: 'insensitive' } },
+        { teamAway: { contains: filters.team, mode: 'insensitive' } },
+      ];
+    }
+    if (filters?.points !== undefined) where.pointsEarned = filters.points;
+
+    const predictions = await this.prisma.prediction.findMany({
+      where,
+      include: {
+        match: true,
+      },
+      orderBy: { match: { matchDate: 'asc' } },
+    });
+
+    return predictions.map((p) => ({
+      id: p.id,
+      matchId: p.matchId,
+      predictedHome: p.predictedHome,
+      predictedAway: p.predictedAway,
+      pointsEarned: p.pointsEarned ?? 0,
+      createdAt: p.createdAt,
+      match: {
+        teamHome: p.match.teamHome,
+        teamAway: p.match.teamAway,
+        flagHome: p.match.flagHome,
+        flagAway: p.match.flagAway,
+        homeScore: p.match.homeScore,
+        awayScore: p.match.awayScore,
+        matchDate: p.match.matchDate,
+        phase: p.match.phase,
+        groupLabel: p.match.groupLabel,
+        status: p.match.status,
+      },
+      statusLabel: this.getPredictionStatusLabel(
+        p.pointsEarned ?? 0,
+        p.match.homeScore ?? 0,
+        p.match.awayScore ?? 0,
+        p.predictedHome,
+        p.predictedAway,
+      ),
+    }));
+  }
+
+  private getPredictionStatusLabel(
+    pointsEarned: number,
+    actualHome: number,
+    actualAway: number,
+    predictedHome: number,
+    predictedAway: number,
+  ): string {
+    if (pointsEarned === 5) return 'Placar Exato';
+    if (pointsEarned === 3) {
+      const actualIsDraw = actualHome === actualAway;
+      const predictedIsDraw = predictedHome === predictedAway;
+      if (actualIsDraw && predictedIsDraw) return 'Acertou Empate';
+      return 'Acertou Vencedor';
+    }
+    return 'Errou';
+  }
+
   async getPrizeRules() {
     const [config, paidUsersCount] = await Promise.all([
       this.prisma.systemConfig.findFirst(),
