@@ -343,6 +343,92 @@ export class AdminService {
     };
   }
 
+  async recalculateScoring() {
+    const logger = new Logger('AdminService');
+
+    const finishedMatches = await this.prisma.match.findMany({
+      where: {
+        status: 'FINISHED',
+        homeScore: { not: null },
+        awayScore: { not: null },
+      },
+    });
+
+    let corrected = 0;
+    const userImpact: Record<string, { username: string; fullName: string; before: number; after: number; delta: number }> = {};
+
+    for (const match of finishedMatches) {
+      const predictions = await this.prisma.prediction.findMany({
+        where: { matchId: match.id },
+        include: { user: { select: { id: true, username: true, fullName: true } } },
+      });
+
+      for (const prediction of predictions) {
+        const oldPoints = prediction.pointsEarned ?? 0;
+
+        const actualIsDraw = match.homeScore === match.awayScore;
+        const predictedIsDraw = prediction.predictedHome === prediction.predictedAway;
+
+        let newPoints: number;
+        if (match.homeScore === prediction.predictedHome && match.awayScore === prediction.predictedAway) {
+          newPoints = 5;
+        } else if (!actualIsDraw && !predictedIsDraw) {
+          const actualWinner = match.homeScore! > match.awayScore! ? 'home' : 'away';
+          const predictedWinner = prediction.predictedHome > prediction.predictedAway ? 'home' : 'away';
+          newPoints = actualWinner === predictedWinner ? 3 : 0;
+        } else if (actualIsDraw && predictedIsDraw) {
+          newPoints = 3;
+        } else {
+          newPoints = 0;
+        }
+
+        if (oldPoints !== newPoints) {
+          await this.prisma.prediction.update({
+            where: { id: prediction.id },
+            data: { pointsEarned: newPoints },
+          });
+          corrected++;
+
+          const uid = prediction.userId;
+          if (!userImpact[uid]) {
+            userImpact[uid] = { username: prediction.user.username, fullName: prediction.user.fullName, before: 0, after: 0, delta: 0 };
+          }
+          userImpact[uid].before += oldPoints;
+          userImpact[uid].after += newPoints;
+          userImpact[uid].delta += newPoints - oldPoints;
+        }
+      }
+    }
+
+    const ranking = await this.rankingService.getRanking();
+    this.rankingGateway.emitRankingUpdate(ranking);
+
+    const usersImpacted = Object.keys(userImpact).length;
+    const totalPointsAdded = Object.values(userImpact).reduce((sum, u) => sum + u.delta, 0);
+
+    const userBreakdown = Object.values(userImpact)
+      .sort((a, b) => b.delta - a.delta)
+      .map(u => ({
+        username: u.username,
+        fullName: u.fullName,
+        pointsAdded: u.delta,
+        oldTotal: u.before,
+        newTotal: u.after,
+      }));
+
+    logger.log(`Recálculo de scoring: ${corrected} palpites corrigidos, ${usersImpacted} usuários impactados, ${totalPointsAdded} pontos adicionais`);
+
+    return {
+      success: true,
+      matchesProcessed: finishedMatches.length,
+      predictionsCorrected: corrected,
+      usersImpacted,
+      totalPointsAdded,
+      userBreakdown,
+      ranking: ranking.slice(0, 20),
+    };
+  }
+
   async resetFinishedMatches() {
     const utcNow = new Date().toISOString();
     const matches = await this.prisma.match.findMany({

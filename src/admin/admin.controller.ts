@@ -87,6 +87,11 @@ export class AdminController {
     return this.adminService.resetFinishedMatches();
   }
 
+  @Post('recalculate-scoring')
+  recalculateScoring() {
+    return this.adminService.recalculateScoring();
+  }
+
   @Post('knockout/unlock')
   unlockKnockout() {
     return this.adminService.unlockKnockout();

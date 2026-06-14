@@ -82,14 +82,14 @@ describe('ScoringService', () => {
       expect(result).toBe(0);
     });
 
-    it('deve retornar 1 ponto para empate com placar diferente', () => {
+    it('deve retornar 3 pontos para empate com placar diferente', () => {
       const result = (service as any).calculatePoints(1, 1, 0, 0);
-      expect(result).toBe(1);
+      expect(result).toBe(3);
     });
 
-    it('deve retornar 1 ponto para empate 2-2 com palpite 0-0', () => {
+    it('deve retornar 3 pontos para empate 2-2 com palpite 0-0', () => {
       const result = (service as any).calculatePoints(2, 2, 0, 0);
-      expect(result).toBe(1);
+      expect(result).toBe(3);
     });
 
     it('deve retornar 0 quando jogo e palpite tem vencedores opostos', () => {
@@ -132,19 +132,19 @@ describe('ScoringService', () => {
     });
 
     // Acertou empate
-    it('deve retornar 1 ponto: palpite 1x1, resultado 0x0', () => {
+    it('deve retornar 3 pontos: palpite 1x1, resultado 0x0', () => {
       const result = (service as any).calculatePoints(0, 0, 1, 1);
-      expect(result).toBe(1);
+      expect(result).toBe(3);
     });
 
-    it('deve retornar 1 ponto: palpite 2x2, resultado 1x1', () => {
+    it('deve retornar 3 pontos: palpite 2x2, resultado 1x1', () => {
       const result = (service as any).calculatePoints(1, 1, 2, 2);
-      expect(result).toBe(1);
+      expect(result).toBe(3);
     });
 
-    it('deve retornar 1 ponto: palpite 3x3, resultado 2x2', () => {
+    it('deve retornar 3 pontos: palpite 3x3, resultado 2x2', () => {
       const result = (service as any).calculatePoints(2, 2, 3, 3);
-      expect(result).toBe(1);
+      expect(result).toBe(3);
     });
 
     // Resultado incorreto
@@ -164,7 +164,7 @@ describe('ScoringService', () => {
       expect(result).toBe(5);
     });
 
-    it('deve priorizar vencedor sobre draw (3 > 1)', () => {
+    it('deve priorizar vencedor sobre empate (ambos 3pts, mas vencedor checa antes)', () => {
       const result = (service as any).calculatePoints(2, 1, 1, 0);
       expect(result).toBe(3);
     });

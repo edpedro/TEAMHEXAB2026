@@ -68,7 +68,7 @@ export class ScoringService {
     }
 
     if (actualIsDraw && predictedIsDraw) {
-      return 1;
+      return 3;
     }
 
     return 0;
