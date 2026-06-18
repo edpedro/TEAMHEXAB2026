@@ -2,6 +2,7 @@ import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { IoAdapter } from "@nestjs/platform-socket.io";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
 import { AppModule } from "./app.module";
@@ -42,6 +43,8 @@ async function bootstrap() {
     }
   }
   app.useStaticAssets(uploadsPath, { prefix: "/uploads" });
+
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   app.setGlobalPrefix("api");
 

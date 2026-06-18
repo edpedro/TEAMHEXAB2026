@@ -91,4 +91,27 @@ export class MatchesService {
       take: limit,
     });
   }
+
+  async getTodayMatches() {
+    const now = new Date();
+    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+    const endOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+
+    return this.prisma.match.findMany({
+      where: {
+        matchDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+      orderBy: { matchDate: 'asc' },
+    });
+  }
+
+  async getLiveMatches() {
+    return this.prisma.match.findMany({
+      where: { status: MatchStatus.IN_PROGRESS },
+      orderBy: { matchDate: 'asc' },
+    });
+  }
 }

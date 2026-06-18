@@ -3,8 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../common/prisma.service';
 import { ScoringService } from '../admin/scoring.service';
+import { MatchesGateway } from '../matches/matches.gateway';
 import { MatchStatus } from '@prisma/client';
 import axios, { AxiosInstance } from 'axios';
+import { Agent as HttpsAgent } from 'https';
 import {
   WcMatch,
   WcTeam,
@@ -14,7 +16,6 @@ import {
   WcGroupsResponse,
   WcGamesResponse,
   WcTeamsResponse,
-  WcAuthResponse,
   WcTeamStanding,
   SyncStatus,
 } from './dto/worldcup-api.types';
@@ -31,25 +32,33 @@ const PHASE_MAP: Record<string, string> = {
   final: 'Final',
 };
 
+const LIVE_POLL_INTERVAL_MS = 120_000;
+const IDLE_POLL_INTERVAL_MS = 1_800_000;
+const MATCH_DURATION_MS = 135 * 60 * 1000;
+
 @Injectable()
 export class FootballApiService implements OnModuleInit {
   private readonly logger = new Logger(FootballApiService.name);
-  private readonly baseUrl: string;
-  private apiToken: string | null = null;
-  private apiTokenExpires: Date | null = null;
   private readonly http: AxiosInstance;
 
   private lastFullSync: Date | null = null;
   private lastResultsSync: Date | null = null;
   private isSyncing = false;
+  private consecutiveFailures = 0;
 
   constructor(
     private config: ConfigService,
     private prisma: PrismaService,
     private scoringService: ScoringService,
+    private matchesGateway: MatchesGateway,
   ) {
-    this.baseUrl = this.config.get<string>('WORLDCUP_API_URL', 'https://worldcup26.ir');
-    this.http = axios.create({ baseURL: this.baseUrl, timeout: 30000 });
+    const baseUrl = this.config.get<string>('WORLDCUP_API_URL', 'https://worldcup26.ir');
+    this.http = axios.create({
+      baseURL: baseUrl,
+      timeout: 60_000,
+      headers: { 'User-Agent': 'TEAMHEXA2026/1.0' },
+      httpsAgent: new HttpsAgent({ keepAlive: true }),
+    });
   }
 
   async onModuleInit() {
@@ -67,84 +76,23 @@ export class FootballApiService implements OnModuleInit {
     }
   }
 
-  private async ensureAuth(): Promise<string | null> {
-    if (this.apiToken && this.apiTokenExpires && this.apiTokenExpires > new Date()) {
-      return this.apiToken;
-    }
-
-    const email = this.config.get<string>('WORLDCUP_API_EMAIL');
-    const password = this.config.get<string>('WORLDCUP_API_PASSWORD');
-
-    try {
-      if (email && password) {
-        const { data } = await this.http.post<WcAuthResponse>(
-          '/auth/authenticate',
-          { email, password },
-        );
-        this.applyToken(data.token);
-        this.logger.log(`Autenticado na API worldcup26.ir como ${email}`);
-        return this.apiToken;
-      }
-
-      const randomEmail = `teamhexa-${Date.now()}@teamhexa2026.app`;
-      const randomPassword = `Thx${Math.random().toString(36).slice(-10)}!`;
-      const { data } = await this.http.post<WcAuthResponse>(
-        '/auth/register',
-        { name: 'TEAMHEXA2026', email: randomEmail, password: randomPassword },
-      );
-      this.applyToken(data.token);
-      this.logger.log(`Conta de serviço criada e autenticada: ${randomEmail}`);
-      return this.apiToken;
-    } catch (err) {
-      this.logger.warn(`Falha na autenticação, tentando sem token: ${err.message}`);
-      return null;
-    }
-  }
-
-  private applyToken(token: string) {
-    this.apiToken = token;
-    try {
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-      this.apiTokenExpires = new Date(payload.exp * 1000);
-    } catch {
-      this.apiTokenExpires = new Date(Date.now() + 84 * 24 * 60 * 60 * 1000);
-    }
-  }
-
-  private getHeaders(): Record<string, string> {
-    if (!this.apiToken) return {};
-    return { Authorization: `Bearer ${this.apiToken}` };
-  }
-
   async fetchTeams(): Promise<WcTeam[]> {
-    await this.ensureAuth();
-    const { data } = await this.http.get<WcTeamsResponse>('/get/teams', {
-      headers: this.getHeaders(),
-    });
+    const { data } = await this.http.get<WcTeamsResponse>('/get/teams');
     return data.teams;
   }
 
   async fetchMatches(): Promise<WcMatch[]> {
-    await this.ensureAuth();
-    const { data } = await this.http.get<WcGamesResponse>('/get/games', {
-      headers: this.getHeaders(),
-    });
+    const { data } = await this.http.get<WcGamesResponse>('/get/games');
     return data.games;
   }
 
   async fetchGroups(): Promise<WcGroup[]> {
-    await this.ensureAuth();
-    const { data } = await this.http.get<WcGroupsResponse>('/get/groups', {
-      headers: this.getHeaders(),
-    });
+    const { data } = await this.http.get<WcGroupsResponse>('/get/groups');
     return data.groups;
   }
 
   async fetchStadiums(): Promise<WcStadium[]> {
-    await this.ensureAuth();
-    const { data } = await this.http.get<WcStadiumsResponse>('/get/stadiums', {
-      headers: this.getHeaders(),
-    });
+    const { data } = await this.http.get<WcStadiumsResponse>('/get/stadiums');
     return data.stadiums;
   }
 
@@ -252,28 +200,25 @@ export class FootballApiService implements OnModuleInit {
       };
 
       if (existing) {
-        const isFinished = existing.status === MatchStatus.FINISHED;
-        const isFinishedWithScores = isFinished && existing.homeScore !== null && existing.awayScore !== null;
-        const apiHasFinished = match.finished === 'TRUE';
-        const matchStillScheduled = existing.status === MatchStatus.SCHEDULED;
+        if (existing.status === MatchStatus.FINISHED) continue;
 
-        const needsDateUpdate = !isFinished && matchDate.getTime() !== existing.matchDate.getTime();
-        const needsUpdate = apiHasFinished && matchStillScheduled;
-        const needsPhaseUpdate = !isFinished && matchData.phase !== existing.phase;
+        const apiHomeScore = this.parseScore(match.home_score);
+        const apiAwayScore = this.parseScore(match.away_score);
+        const apiFinished = match.finished === 'TRUE';
+        const needsDateUpdate = matchDate.getTime() !== existing.matchDate.getTime();
+        const needsPhaseUpdate = matchData.phase !== existing.phase;
+        const scoresChanged = existing.homeScore !== apiHomeScore || existing.awayScore !== apiAwayScore;
+        const needsScoreUpdate = apiFinished || (scoresChanged && (apiHomeScore > 0 || apiAwayScore > 0));
 
-        if (needsDateUpdate || needsUpdate || needsPhaseUpdate) {
+        if (needsDateUpdate || needsScoreUpdate || needsPhaseUpdate) {
           const updateData: any = {};
-          if (needsDateUpdate) {
-            updateData.matchDate = matchDate;
+          if (needsDateUpdate) updateData.matchDate = matchDate;
+          if (needsScoreUpdate) {
+            updateData.homeScore = apiHomeScore || null;
+            updateData.awayScore = apiAwayScore || null;
+            if (apiFinished) updateData.status = MatchStatus.FINISHED;
           }
-          if (needsUpdate) {
-            updateData.homeScore = matchData.homeScore;
-            updateData.awayScore = matchData.awayScore;
-            updateData.status = matchData.status;
-          }
-          if (needsPhaseUpdate) {
-            updateData.phase = matchData.phase;
-          }
+          if (needsPhaseUpdate) updateData.phase = matchData.phase;
           await this.prisma.match.update({
             where: { id: existing.id },
             data: updateData,
@@ -292,51 +237,183 @@ export class FootballApiService implements OnModuleInit {
   }
 
   async syncResults(): Promise<number> {
-    const matches = await this.fetchMatches();
-
+    const apiMatches = await this.fetchMatches();
     let updated = 0;
+    const changedMatchIds: string[] = [];
+    const finishedMatchIds: string[] = [];
 
-    for (const match of matches) {
-      if (match.finished !== 'TRUE') continue;
+    for (const apiMatch of apiMatches) {
+      if (apiMatch.home_team_id === '0' && apiMatch.away_team_id === '0') continue;
 
-      const homeEn = match.home_team_name_en || match.home_team_label || null;
-      const awayEn = match.away_team_name_en || match.away_team_label || null;
+      const homeEn = apiMatch.home_team_name_en || apiMatch.home_team_label || null;
+      const awayEn = apiMatch.away_team_name_en || apiMatch.away_team_label || null;
       if (!homeEn || !awayEn) continue;
 
-      const stadiumInfo = getStadiumInfo(match.stadium_id);
-      const matchDate = this.parseLocalDate(match.local_date, stadiumInfo?.utcOffsetHours);
+      const stadiumInfo = getStadiumInfo(apiMatch.stadium_id);
+      const matchDate = this.parseLocalDate(apiMatch.local_date, stadiumInfo?.utcOffsetHours);
       if (!matchDate) continue;
 
       const homeInfo = getTeamInfo(homeEn);
       const awayInfo = getTeamInfo(awayEn);
+      const phase = this.parsePhase(apiMatch.type);
 
-      const phase = this.parsePhase(match.type);
       const existing = await this.prisma.match.findFirst({
         where: {
           teamHome: homeInfo.name,
           teamAway: awayInfo.name,
           phase,
-          groupLabel: match.group || null,
+          groupLabel: apiMatch.group || null,
         },
       });
 
-      if (existing && existing.status !== MatchStatus.FINISHED && matchDate <= new Date()) {
+      if (!existing) continue;
+
+      const apiHomeScore = this.parseScore(apiMatch.home_score);
+      const apiAwayScore = this.parseScore(apiMatch.away_score);
+      const apiFinished = apiMatch.finished === 'TRUE';
+      const now = new Date();
+      const nowTs = now.getTime();
+      const matchStart = matchDate.getTime();
+      const isInTimeWindow = !apiFinished
+        && nowTs >= matchStart
+        && nowTs <= matchStart + MATCH_DURATION_MS;
+      const apiHasScore = apiMatch.home_score != null && apiMatch.home_score !== '';
+      const scoresChanged = apiHasScore && (existing.homeScore !== apiHomeScore || existing.awayScore !== apiAwayScore);
+
+      if (apiFinished && existing.status !== MatchStatus.FINISHED) {
         await this.prisma.match.update({
           where: { id: existing.id },
           data: {
-            homeScore: this.parseScore(match.home_score),
-            awayScore: this.parseScore(match.away_score),
+            homeScore: apiHomeScore,
+            awayScore: apiAwayScore,
             status: MatchStatus.FINISHED,
           },
         });
         await this.scoringService.calculateAndDistributePoints(existing.id);
         updated++;
+        changedMatchIds.push(existing.id);
+        finishedMatchIds.push(existing.id);
+      } else if (isInTimeWindow && scoresChanged) {
+        const updateData: any = {
+          homeScore: apiHomeScore,
+          awayScore: apiAwayScore,
+        };
+        if (existing.status === MatchStatus.SCHEDULED) {
+          updateData.status = MatchStatus.IN_PROGRESS;
+        }
+        await this.prisma.match.update({
+          where: { id: existing.id },
+          data: updateData,
+        });
+        updated++;
+        changedMatchIds.push(existing.id);
+      } else if (isInTimeWindow && existing.status === MatchStatus.SCHEDULED) {
+        await this.prisma.match.update({
+          where: { id: existing.id },
+          data: { status: MatchStatus.IN_PROGRESS },
+        });
+        changedMatchIds.push(existing.id);
+        updated++;
+      } else if (existing.status === MatchStatus.IN_PROGRESS && !apiFinished && !isInTimeWindow) {
+        await this.prisma.match.update({
+          where: { id: existing.id },
+          data: { status: MatchStatus.SCHEDULED, homeScore: null, awayScore: null },
+        });
+        changedMatchIds.push(existing.id);
+        updated++;
       }
     }
 
+    if (changedMatchIds.length > 0) {
+      const updatedMatches = await this.prisma.match.findMany({
+        where: { id: { in: changedMatchIds } },
+      });
+      try {
+        this.matchesGateway.emitMatchesBatchUpdate(updatedMatches);
+
+        const liveMatches = updatedMatches.filter((m) => m.status === MatchStatus.IN_PROGRESS);
+        if (liveMatches.length > 0) {
+          this.matchesGateway.emitLiveStatus(liveMatches.length, liveMatches);
+        }
+      } catch (emitErr) {
+        this.logger.warn(`Falha ao emitir WebSocket: ${emitErr.message}`);
+      }
+
+      this.logger.log(`Live sync: ${changedMatchIds.length} partidas atualizadas (${finishedMatchIds.length} finalizadas, ${changedMatchIds.length - finishedMatchIds.length} ao vivo)`);
+    }
+
     this.lastResultsSync = new Date();
-    this.logger.log(`Resultados atualizados: ${updated}`);
+    this.consecutiveFailures = 0;
     return updated;
+  }
+
+  @Cron('* * * * *')
+  async handleCronResults() {
+    if (this.isSyncing) return;
+
+    const now = Date.now();
+    const lastSync = this.lastResultsSync?.getTime() ?? 0;
+    const secondsSinceLastSync = (now - lastSync) / 1000;
+
+    if (secondsSinceLastSync < 60) return;
+
+    const liveCount = await this.prisma.match.count({
+      where: { status: MatchStatus.IN_PROGRESS },
+    });
+
+    const hasLiveMatches = liveCount > 0;
+
+    const nearMatch = await this.prisma.match.count({
+      where: {
+        status: MatchStatus.SCHEDULED,
+        matchDate: {
+          gte: new Date(now - MATCH_DURATION_MS),
+          lte: new Date(now + 5 * 60000),
+        },
+      },
+    });
+
+    let shouldSync = false;
+
+    if (hasLiveMatches && secondsSinceLastSync >= 120) {
+      shouldSync = true;
+    } else if (nearMatch > 0 && secondsSinceLastSync >= 60) {
+      shouldSync = true;
+    } else if (!hasLiveMatches && secondsSinceLastSync >= 1800) {
+      shouldSync = true;
+    }
+
+    if (!shouldSync) return;
+
+    this.isSyncing = true;
+    try {
+      await this.syncResults();
+      this.consecutiveFailures = 0;
+    } catch (err) {
+      this.consecutiveFailures++;
+      const backoffMs = Math.min(this.consecutiveFailures, 6) * 60_000;
+      this.logger.error(`API falhou (${this.consecutiveFailures}x consecutiva): ${err.message}. Backoff: ${backoffMs / 1000}s`);
+      this.lastResultsSync = new Date(Date.now() - 1800_000 + backoffMs);
+    } finally {
+      this.isSyncing = false;
+    }
+  }
+
+  @Cron('0 */6 * * *')
+  async handleCronFullSync() {
+    if (this.isSyncing) {
+      this.logger.warn('CRON sync completo ignorado — sync em andamento');
+      return;
+    }
+    this.isSyncing = true;
+    this.logger.log('CRON: sincronização completa...');
+    try {
+      await this.syncAll();
+    } catch (err) {
+      this.logger.error('CRON sync completo falhou:', err.message);
+    } finally {
+      this.isSyncing = false;
+    }
   }
 
   async getStatus(): Promise<SyncStatus> {
@@ -364,46 +441,12 @@ export class FootballApiService implements OnModuleInit {
 
     return {
       apiConnected,
-      authenticated: !!this.apiToken,
+      authenticated: false,
       lastFullSync: this.lastFullSync?.toISOString() ?? null,
       lastResultsSync: this.lastResultsSync?.toISOString() ?? null,
       totals: { matches: matchCount, predictions: predictionCount, users: userCount },
       apiTotals,
     };
-  }
-
-  @Cron('*/30 * * * *')
-  async handleCronResults() {
-    if (this.isSyncing) {
-      this.logger.warn('CRON resultados ignorado — sync em andamento');
-      return;
-    }
-    this.isSyncing = true;
-    this.logger.log('CRON: verificando resultados...');
-    try {
-      await this.syncResults();
-    } catch (err) {
-      this.logger.error('CRON resultados falhou:', err.message);
-    } finally {
-      this.isSyncing = false;
-    }
-  }
-
-  @Cron('0 */6 * * *')
-  async handleCronFullSync() {
-    if (this.isSyncing) {
-      this.logger.warn('CRON sync completo ignorado — sync em andamento');
-      return;
-    }
-    this.isSyncing = true;
-    this.logger.log('CRON: sincronização completa...');
-    try {
-      await this.syncAll();
-    } catch (err) {
-      this.logger.error('CRON sync completo falhou:', err.message);
-    } finally {
-      this.isSyncing = false;
-    }
   }
 
   private parsePhase(apiType: string): string {

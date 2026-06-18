@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { FootballApiService } from './football-api/football-api.service';
 import { PrismaService } from './common/prisma.service';
 import { ScoringService } from './admin/scoring.service';
+import { MatchesGateway } from './matches/matches.gateway';
 import { GamificationService } from './gamification/gamification.service';
 import { RankingGateway } from './ranking/ranking.gateway';
 import { RankingService } from './ranking/ranking.service';
@@ -28,6 +29,11 @@ describe('Concorrência e Race Conditions', () => {
         return def;
       })};
       const mockScoring = { calculateAndDistributePoints: jest.fn() };
+      const mockMatchesGateway = {
+        emitMatchUpdate: jest.fn(),
+        emitMatchesBatchUpdate: jest.fn(),
+        emitLiveStatus: jest.fn(),
+      };
 
       const mod = await Test.createTestingModule({
         providers: [
@@ -35,6 +41,7 @@ describe('Concorrência e Race Conditions', () => {
           { provide: ConfigService, useValue: mockConfig },
           { provide: PrismaService, useValue: mockPrisma },
           { provide: ScoringService, useValue: mockScoring },
+          { provide: MatchesGateway, useValue: mockMatchesGateway },
         ],
       }).compile();
 
@@ -139,6 +146,7 @@ describe('Concorrência e Race Conditions', () => {
           { provide: GamificationService, useValue: mockGamif },
           { provide: RankingGateway, useValue: mockRg },
           { provide: RankingService, useValue: mockRs },
+          { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
         ],
       }).compile();
       const svc = mod.get(ScoringService);
@@ -185,6 +193,7 @@ describe('Concorrência e Race Conditions', () => {
           { provide: RankingService, useValue: mockRanking },
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
+          { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
         ],
       }).compile();
       const admin = mod.get(AdminService);

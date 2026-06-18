@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { RankingGateway } from '../ranking/ranking.gateway';
 import { RankingService } from '../ranking/ranking.service';
+import { MatchesGateway } from '../matches/matches.gateway';
 
 @Injectable()
 export class ScoringService {
@@ -11,6 +12,7 @@ export class ScoringService {
     private gamificationService: GamificationService,
     private rankingGateway: RankingGateway,
     private rankingService: RankingService,
+    private matchesGateway: MatchesGateway,
   ) {}
 
   async calculateAndDistributePoints(matchId: string) {
@@ -44,6 +46,13 @@ export class ScoringService {
 
     const ranking = await this.rankingService.getRanking();
     this.rankingGateway.emitRankingUpdate(ranking);
+
+    const updatedMatch = await this.prisma.match.findUnique({
+      where: { id: matchId },
+    });
+    if (updatedMatch) {
+      this.matchesGateway.emitMatchUpdate(updatedMatch);
+    }
   }
 
   private calculatePoints(

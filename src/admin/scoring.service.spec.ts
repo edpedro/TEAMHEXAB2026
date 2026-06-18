@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { RankingGateway } from '../ranking/ranking.gateway';
 import { RankingService } from '../ranking/ranking.service';
+import { MatchesGateway } from '../matches/matches.gateway';
 
 describe('ScoringService', () => {
   let service: ScoringService;
@@ -17,6 +18,11 @@ describe('ScoringService', () => {
   const mockGamification = { checkAndAwardAchievements: jest.fn() };
   const mockRankingGateway = { emitRankingUpdate: jest.fn() };
   const mockRankingService = { getRanking: jest.fn() };
+  const mockMatchesGateway = {
+    emitMatchUpdate: jest.fn(),
+    emitMatchesBatchUpdate: jest.fn(),
+    emitLiveStatus: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -26,6 +32,7 @@ describe('ScoringService', () => {
         { provide: GamificationService, useValue: mockGamification },
         { provide: RankingGateway, useValue: mockRankingGateway },
         { provide: RankingService, useValue: mockRankingService },
+        { provide: MatchesGateway, useValue: mockMatchesGateway },
       ],
     }).compile();
 

@@ -13,6 +13,7 @@ import { ReceiptsService } from './receipts/receipts.service';
 import { GamificationService } from './gamification/gamification.service';
 import { NotificationsService } from './notifications/notifications.service';
 import { RankingGateway } from './ranking/ranking.gateway';
+import { MatchesGateway } from './matches/matches.gateway';
 
 describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
   beforeAll(() => {
@@ -212,6 +213,7 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
           { provide: RankingService, useValue: mockRankingSvc },
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
+          { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
         ],
       }).compile();
       const admin = mod.get(AdminService);
@@ -267,6 +269,7 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
           { provide: RankingService, useValue: { getRanking: jest.fn().mockResolvedValue([]) } },
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
+          { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
         ],
       }).compile();
       const admin = mod.get(AdminService);
@@ -293,6 +296,7 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
           { provide: RankingService, useValue: { getRanking: jest.fn().mockResolvedValue([]) } },
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
+          { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
         ],
       }).compile();
       const admin = mod.get(AdminService);

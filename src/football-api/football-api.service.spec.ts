@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { FootballApiService } from './football-api.service';
 import { PrismaService } from '../common/prisma.service';
 import { ScoringService } from '../admin/scoring.service';
+import { MatchesGateway } from '../matches/matches.gateway';
 import { MatchStatus } from '@prisma/client';
 
 describe('FootballApiService', () => {
@@ -36,6 +37,12 @@ describe('FootballApiService', () => {
     calculateAndDistributePoints: jest.fn(),
   };
 
+  const mockMatchesGateway = {
+    emitMatchUpdate: jest.fn(),
+    emitMatchesBatchUpdate: jest.fn(),
+    emitLiveStatus: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -43,6 +50,7 @@ describe('FootballApiService', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ScoringService, useValue: mockScoringService },
+        { provide: MatchesGateway, useValue: mockMatchesGateway },
       ],
     }).compile();
 

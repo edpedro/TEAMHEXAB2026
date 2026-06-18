@@ -13,6 +13,7 @@ import { RankingGateway } from './ranking/ranking.gateway';
 import { RankingService } from './ranking/ranking.service';
 import { NotificationsService } from './notifications/notifications.service';
 import { ReceiptsService } from './receipts/receipts.service';
+import { MatchesGateway } from './matches/matches.gateway';
 import { Role } from '@prisma/client';
 
 describe('Validações de Input', () => {
@@ -43,6 +44,7 @@ describe('Validações de Input', () => {
           { provide: RankingService, useValue: { getRanking: jest.fn().mockResolvedValue([]) } },
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
+          { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
         ],
       }).compile();
 
@@ -89,6 +91,7 @@ describe('Validações de Input', () => {
           { provide: RankingService, useValue: { getRanking: jest.fn().mockResolvedValue([]) } },
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
+          { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
         ],
       }).compile();
 
@@ -131,6 +134,7 @@ describe('Validações de Input', () => {
           { provide: RankingService, useValue: { getRanking: jest.fn().mockResolvedValue([]) } },
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
+          { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
         ],
       }).compile();
 

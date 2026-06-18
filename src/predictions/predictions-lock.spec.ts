@@ -4,6 +4,7 @@ import { FootballApiService } from '../football-api/football-api.service';
 import { PrismaService } from '../common/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { ScoringService } from '../admin/scoring.service';
+import { MatchesGateway } from '../matches/matches.gateway';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
 describe('Regra de bloqueio de palpites — 30 minutos', () => {
@@ -194,6 +195,11 @@ describe('Regra de bloqueio de palpites — 30 minutos', () => {
       };
       const mockConfig = { get: jest.fn(() => 'https://worldcup26.ir') };
       const mockScoring = { calculateAndDistributePoints: jest.fn() };
+      const mockMatchesGateway = {
+        emitMatchUpdate: jest.fn(),
+        emitMatchesBatchUpdate: jest.fn(),
+        emitLiveStatus: jest.fn(),
+      };
 
       const module: TestingModule = await Test.createTestingModule({
         providers: [
@@ -201,6 +207,7 @@ describe('Regra de bloqueio de palpites — 30 minutos', () => {
           { provide: ConfigService, useValue: mockConfig },
           { provide: PrismaService, useValue: mockPrisma },
           { provide: ScoringService, useValue: mockScoring },
+          { provide: MatchesGateway, useValue: mockMatchesGateway },
         ],
       }).compile();
 

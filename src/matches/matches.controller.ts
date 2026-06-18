@@ -18,7 +18,6 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role, MatchStatus } from '@prisma/client';
 
 @Controller('matches')
-@UseGuards(JwtAuthGuard)
 export class MatchesController {
   constructor(private matchesService: MatchesService) {}
 
@@ -40,27 +39,38 @@ export class MatchesController {
     return this.matchesService.getRecentResults(limit ? +limit : 5);
   }
 
+  @Get('today')
+  getTodayMatches() {
+    return this.matchesService.getTodayMatches();
+  }
+
+  @Get('live')
+  getLiveMatches() {
+    return this.matchesService.getLiveMatches();
+  }
+
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
   findById(@Param('id') id: string) {
     return this.matchesService.findById(id);
   }
 
   @Post()
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   create(@Body() dto: CreateMatchDto) {
     return this.matchesService.create(dto);
   }
 
   @Patch(':id')
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   update(@Param('id') id: string, @Body() dto: UpdateMatchDto) {
     return this.matchesService.update(id, dto);
   }
 
   @Delete(':id')
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   remove(@Param('id') id: string) {
     return this.matchesService.remove(id);
