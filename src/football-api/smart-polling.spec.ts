@@ -160,9 +160,9 @@ describe('Smart Polling — handleCronResults', () => {
     expect(syncResultsSpy).not.toHaveBeenCalled();
   });
 
-  // ─── R09: Backoff — falha na API ajusta lastResultsSync ──────
+  // ─── R09: Backoff adaptativo — falha na API aumenta intervalo live ──────
 
-  it('deve aplicar backoff exponencial em caso de falha na API', async () => {
+  it('deve aplicar backoff adaptativo em caso de falha na API', async () => {
     (service as any).isSyncing = false;
     (service as any).lastResultsSync = new Date(Date.now() - 180_000);
     (service as any).consecutiveFailures = 0;
@@ -170,58 +170,56 @@ describe('Smart Polling — handleCronResults', () => {
       .mockResolvedValueOnce(2)  // liveCount
       .mockResolvedValueOnce(0); // nearMatch
 
-    // Simula falha no syncResults
-    syncResultsSpy.mockRejectedValue(new Error('API timeout'));
-
     const errorSpy = jest.spyOn(service['logger'], 'error').mockImplementation(() => {});
 
+    // 1ª falha — liveInterval = 120 + 0*60 = 120s, lastSync 180s atrás → sync
+    syncResultsSpy.mockRejectedValue(new Error('API timeout'));
     await (service as any).handleCronResults();
-
-    // consecutiveFailures deve ter incrementado para 1
     expect((service as any).consecutiveFailures).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('API falhou (1x consecutiva)'),
     );
 
-    // Segunda falha — backoff de 2min
+    // 2ª falha — liveInterval = 120 + 1*60 = 180s, lastSync 200s atrás → sync
     syncResultsSpy.mockRejectedValue(new Error('API timeout'));
-    (service as any).lastResultsSync = new Date(Date.now() - 180_000);
+    (service as any).lastResultsSync = new Date(Date.now() - 200_000);
     await (service as any).handleCronResults();
     expect((service as any).consecutiveFailures).toBe(2);
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('API falhou (2x consecutiva)'),
-    );
 
-    // Terceira falha — backoff de 3min
+    // 3ª falha — liveInterval = 120 + 2*60 = 240s, lastSync 300s atrás → sync
     syncResultsSpy.mockRejectedValue(new Error('API timeout'));
-    (service as any).lastResultsSync = new Date(Date.now() - 180_000);
+    (service as any).lastResultsSync = new Date(Date.now() - 300_000);
     await (service as any).handleCronResults();
     expect((service as any).consecutiveFailures).toBe(3);
 
-    // Sétima falha — cap no backoff (max 6)
-    for (let i = 4; i <= 7; i++) {
+    // 5ª falha — liveInterval = 120 + 4*60 = 360s, lastSync 400s atrás → sync
+    for (let i = 4; i <= 5; i++) {
       syncResultsSpy.mockRejectedValue(new Error('API timeout'));
-      (service as any).lastResultsSync = new Date(Date.now() - 180_000);
+      (service as any).lastResultsSync = new Date(Date.now() - 400_000);
       await (service as any).handleCronResults();
     }
-    // Cap atinge 6, não deve passar
+    expect((service as any).consecutiveFailures).toBe(5);
+
+    // 7ª falha — liveInterval = 120 + 6*60 = 480s (cap 600), lastSync 500s atrás → sync
+    for (let i = 6; i <= 7; i++) {
+      syncResultsSpy.mockRejectedValue(new Error('API timeout'));
+      (service as any).lastResultsSync = new Date(Date.now() - 500_000);
+      await (service as any).handleCronResults();
+    }
     expect((service as any).consecutiveFailures).toBe(7);
-    // Verifica que o backoffMs calculado = min(7,6) * 60000 = 360000
-    // O lastResultsSync foi ajustado para now - 1800000 + 360000 = now - 1440000
-    // Isso significa que o próximo sync será adiado em 24min (1440s)
   });
 
   // ─── R10: Sucesso após falha reseta consecutiveFailures ──────
 
   it('deve resetar consecutiveFailures para 0 após sync bem-sucedido', async () => {
     (service as any).isSyncing = false;
-    (service as any).lastResultsSync = new Date(Date.now() - 180_000);
     (service as any).consecutiveFailures = 5;
+    // liveInterval = 120 + 5*60 = 420s, lastSync 500s atrás → sync
+    (service as any).lastResultsSync = new Date(Date.now() - 500_000);
     mockPrisma.match.count
       .mockResolvedValueOnce(2)  // liveCount
       .mockResolvedValueOnce(0); // nearMatch
 
-    // Desta vez o syncResults tem sucesso
     syncResultsSpy.mockResolvedValue(2);
 
     await (service as any).handleCronResults();

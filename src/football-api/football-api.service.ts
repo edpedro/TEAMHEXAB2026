@@ -149,6 +149,8 @@ export class FootballApiService implements OnModuleInit {
     let syncedMatches = 0;
     let updatedMatches = 0;
 
+    const nowTs = Date.now();
+
     for (const match of matches) {
       const isKnockoutTbd = match.home_team_id === '0' && match.away_team_id === '0';
       const homeEn = match.home_team_name_en || match.home_team_label || null;
@@ -216,7 +218,9 @@ export class FootballApiService implements OnModuleInit {
           if (needsScoreUpdate) {
             updateData.homeScore = apiHomeScore || null;
             updateData.awayScore = apiAwayScore || null;
-            if (apiFinished) updateData.status = MatchStatus.FINISHED;
+            if (apiFinished && nowTs > matchDate.getTime() + MATCH_DURATION_MS) {
+              updateData.status = MatchStatus.FINISHED;
+            }
           }
           if (needsPhaseUpdate) updateData.phase = matchData.phase;
           await this.prisma.match.update({
@@ -280,7 +284,7 @@ export class FootballApiService implements OnModuleInit {
       const apiHasScore = apiMatch.home_score != null && apiMatch.home_score !== '';
       const scoresChanged = apiHasScore && (existing.homeScore !== apiHomeScore || existing.awayScore !== apiAwayScore);
 
-      if (apiFinished && existing.status !== MatchStatus.FINISHED) {
+      if (apiFinished && nowTs > matchStart + MATCH_DURATION_MS && existing.status !== MatchStatus.FINISHED) {
         await this.prisma.match.update({
           where: { id: existing.id },
           data: {
@@ -375,11 +379,16 @@ export class FootballApiService implements OnModuleInit {
 
     let shouldSync = false;
 
-    if (hasLiveMatches && secondsSinceLastSync >= 120) {
+    const fail = this.consecutiveFailures;
+    const liveInterval = Math.min(120 + fail * 60, 600);
+    const nearInterval = 60;
+    const idleInterval = 1800;
+
+    if (hasLiveMatches && secondsSinceLastSync >= liveInterval) {
       shouldSync = true;
-    } else if (nearMatch > 0 && secondsSinceLastSync >= 60) {
+    } else if (nearMatch > 0 && !hasLiveMatches && secondsSinceLastSync >= nearInterval) {
       shouldSync = true;
-    } else if (!hasLiveMatches && secondsSinceLastSync >= 1800) {
+    } else if (!hasLiveMatches && secondsSinceLastSync >= idleInterval) {
       shouldSync = true;
     }
 
@@ -393,7 +402,7 @@ export class FootballApiService implements OnModuleInit {
       this.consecutiveFailures++;
       const backoffMs = Math.min(this.consecutiveFailures, 6) * 60_000;
       this.logger.error(`API falhou (${this.consecutiveFailures}x consecutiva): ${err.message}. Backoff: ${backoffMs / 1000}s`);
-      this.lastResultsSync = new Date(Date.now() - 1800_000 + backoffMs);
+      this.lastResultsSync = new Date(Date.now() - idleInterval * 1000 + backoffMs);
     } finally {
       this.isSyncing = false;
     }
