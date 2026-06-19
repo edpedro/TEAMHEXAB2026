@@ -55,9 +55,9 @@ export class FootballApiService implements OnModuleInit {
     const baseUrl = this.config.get<string>('WORLDCUP_API_URL', 'https://worldcup26.ir');
     this.http = axios.create({
       baseURL: baseUrl,
-      timeout: 60_000,
+      timeout: 30_000,
       headers: { 'User-Agent': 'TEAMHEXA2026/1.0' },
-      httpsAgent: new HttpsAgent({ keepAlive: true }),
+      httpsAgent: new HttpsAgent({ keepAlive: false }),
     });
   }
 

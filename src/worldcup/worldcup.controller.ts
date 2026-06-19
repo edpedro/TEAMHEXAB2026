@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { FootballApiService } from '../football-api/football-api.service';
 import { getTeamInfo } from '../football-api/dto/team-mapping';
 
@@ -18,11 +18,18 @@ export class WorldcupController {
 
   @Get()
   async getWorldCupData() {
-    const [games, teams, groups] = await Promise.all([
-      this.api.fetchMatches(),
-      this.api.fetchTeams(),
-      this.api.fetchGroups(),
-    ]);
+    let games: any[], teams: any[], groups: any[];
+    try {
+      [games, teams, groups] = await Promise.all([
+        this.api.fetchMatches(),
+        this.api.fetchTeams(),
+        this.api.fetchGroups(),
+      ]);
+    } catch {
+      throw new ServiceUnavailableException(
+        'API externa temporariamente indisponível. Tente novamente mais tarde.',
+      );
+    }
 
     const teamMap = new Map<string, { name: string; flag: string; iso2: string; teamId: string }>();
     for (const t of teams) {
@@ -76,8 +83,8 @@ export class WorldcupController {
       }
     }
 
-    const groupsData = groups.map((g) => {
-      const standings = (g.teams || []).map((s) => {
+    const groupsData = groups.map((g: any) => {
+      const standings = (g.teams || []).map((s: any) => {
         const team = teamMap.get(s.team_id);
         return {
           teamId: s.team_id,
