@@ -207,17 +207,18 @@ export class FootballApiService implements OnModuleInit {
         const apiHomeScore = this.parseScore(match.home_score);
         const apiAwayScore = this.parseScore(match.away_score);
         const apiFinished = match.finished === 'TRUE';
+        const apiHasScore = match.home_score != null && match.home_score !== '';
         const needsDateUpdate = matchDate.getTime() !== existing.matchDate.getTime();
         const needsPhaseUpdate = matchData.phase !== existing.phase;
-        const scoresChanged = existing.homeScore !== apiHomeScore || existing.awayScore !== apiAwayScore;
-        const needsScoreUpdate = apiFinished || (scoresChanged && (apiHomeScore > 0 || apiAwayScore > 0));
+        const scoresChanged = apiHasScore && (existing.homeScore !== apiHomeScore || existing.awayScore !== apiAwayScore);
+        const needsScoreUpdate = (apiFinished && apiHasScore) || (scoresChanged && (apiHomeScore > 0 || apiAwayScore > 0));
 
         if (needsDateUpdate || needsScoreUpdate || needsPhaseUpdate) {
           const updateData: any = {};
           if (needsDateUpdate) updateData.matchDate = matchDate;
           if (needsScoreUpdate) {
-            updateData.homeScore = apiHomeScore || null;
-            updateData.awayScore = apiAwayScore || null;
+            updateData.homeScore = apiHomeScore;
+            updateData.awayScore = apiAwayScore;
             if (apiFinished && nowTs > matchDate.getTime() + MATCH_DURATION_MS) {
               updateData.status = MatchStatus.FINISHED;
             }
@@ -284,7 +285,7 @@ export class FootballApiService implements OnModuleInit {
       const apiHasScore = apiMatch.home_score != null && apiMatch.home_score !== '';
       const scoresChanged = apiHasScore && (existing.homeScore !== apiHomeScore || existing.awayScore !== apiAwayScore);
 
-      if (apiFinished && nowTs > matchStart + MATCH_DURATION_MS && existing.status !== MatchStatus.FINISHED) {
+      if (apiFinished && apiHasScore && nowTs > matchStart + MATCH_DURATION_MS && existing.status !== MatchStatus.FINISHED) {
         await this.prisma.match.update({
           where: { id: existing.id },
           data: {
