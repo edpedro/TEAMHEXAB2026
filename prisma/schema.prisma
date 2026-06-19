@@ -52,6 +52,7 @@ model Match {
   homeScore  Int?            @map("home_score")
   awayScore  Int?            @map("away_score")
   status     MatchStatus     @default(SCHEDULED)
+  matchday   Int?
 
   predictions Prediction[]
 
