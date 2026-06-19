@@ -202,8 +202,6 @@ export class FootballApiService implements OnModuleInit {
       };
 
       if (existing) {
-        if (existing.status === MatchStatus.FINISHED) continue;
-
         const apiHomeScore = this.parseScore(match.home_score);
         const apiAwayScore = this.parseScore(match.away_score);
         const apiFinished = match.finished === 'TRUE';
@@ -229,6 +227,12 @@ export class FootballApiService implements OnModuleInit {
             data: updateData,
           });
           updatedMatches++;
+
+          if (needsScoreUpdate && updateData.status === MatchStatus.FINISHED) {
+            await this.scoringService.calculateAndDistributePoints(existing.id);
+          } else if (needsScoreUpdate && existing.status === MatchStatus.FINISHED) {
+            await this.scoringService.calculateAndDistributePoints(existing.id);
+          }
         }
       } else {
         await this.prisma.match.create({ data: matchData });
@@ -285,19 +289,24 @@ export class FootballApiService implements OnModuleInit {
       const apiHasScore = apiMatch.home_score != null && apiMatch.home_score !== '';
       const scoresChanged = apiHasScore && (existing.homeScore !== apiHomeScore || existing.awayScore !== apiAwayScore);
 
-      if (apiFinished && apiHasScore && nowTs > matchStart + MATCH_DURATION_MS && existing.status !== MatchStatus.FINISHED) {
-        await this.prisma.match.update({
-          where: { id: existing.id },
-          data: {
+      if (apiFinished && apiHasScore && nowTs > matchStart + MATCH_DURATION_MS) {
+        const needsFinish = existing.status !== MatchStatus.FINISHED;
+        const needsScoreFix = scoresChanged;
+        if (needsFinish || needsScoreFix) {
+          const updateData: any = {
             homeScore: apiHomeScore,
             awayScore: apiAwayScore,
-            status: MatchStatus.FINISHED,
-          },
-        });
-        await this.scoringService.calculateAndDistributePoints(existing.id);
-        updated++;
-        changedMatchIds.push(existing.id);
-        finishedMatchIds.push(existing.id);
+          };
+          if (needsFinish) updateData.status = MatchStatus.FINISHED;
+          await this.prisma.match.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+          await this.scoringService.calculateAndDistributePoints(existing.id);
+          updated++;
+          changedMatchIds.push(existing.id);
+          if (needsFinish) finishedMatchIds.push(existing.id);
+        }
       } else if (isInTimeWindow && scoresChanged) {
         const updateData: any = {
           homeScore: apiHomeScore,
