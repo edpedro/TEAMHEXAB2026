@@ -8,9 +8,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { RankingModule } from '../ranking/ranking.module';
 import { ReceiptsModule } from '../receipts/receipts.module';
 import { MatchesModule } from '../matches/matches.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
-  imports: [GamificationModule, NotificationsModule, RankingModule, ReceiptsModule, MatchesModule],
+  imports: [GamificationModule, NotificationsModule, RankingModule, ReceiptsModule, MatchesModule, WhatsappModule],
   controllers: [AdminController, ConfigController],
   providers: [AdminService, ScoringService],
   exports: [AdminService, ScoringService],

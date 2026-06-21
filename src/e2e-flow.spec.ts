@@ -14,6 +14,7 @@ import { GamificationService } from './gamification/gamification.service';
 import { NotificationsService } from './notifications/notifications.service';
 import { RankingGateway } from './ranking/ranking.gateway';
 import { MatchesGateway } from './matches/matches.gateway';
+import { WhatsappService } from './whatsapp/whatsapp.service';
 
 describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
   beforeAll(() => {
@@ -53,6 +54,7 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
   const config = { id: 'cfg-1', betAmount: 20, pixKey: null, knockoutEnabled: false, bettingEnabled: true, betDeadline: null };
   const mockJwt = { sign: jest.fn().mockReturnValue('mock-token') };
   const mockConfig = { get: jest.fn((key: string, def?: any) => key === 'JWT_REFRESH_SECRET' ? 's' : key === 'JWT_REFRESH_EXPIRATION' ? '3650d' : def) };
+  const mockWhatsapp = { hasNotificationBeenSent: jest.fn(), sendMatchFinishedNotification: jest.fn(), sendRankingNotification: jest.fn(), recordNotification: jest.fn() };
 
   describe('E01 — Cadastro', () => {
     it('deve registrar novo usuário com sucesso', async () => {
@@ -201,7 +203,7 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
         .mockResolvedValueOnce(baseMatch)
         .mockResolvedValueOnce({ ...baseMatch, homeScore: 2, awayScore: 1, status: 'FINISHED' });
       p.match.update.mockResolvedValue({ ...baseMatch, homeScore: 2, awayScore: 1, status: 'FINISHED' });
-      p.prediction.findMany.mockResolvedValue([{ id: 'p1', userId: 'u1', predictedHome: 2, predictedAway: 1, pointsEarned: null }]);
+      p.prediction.findMany.mockResolvedValue([{ id: 'p1', userId: 'u1', predictedHome: 2, predictedAway: 1, pointsEarned: null, user: { fullName: 'Test User' } }]);
       p.prediction.update.mockResolvedValue({});
 
       const mod = await Test.createTestingModule({
@@ -214,6 +216,7 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
           { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
       const admin = mod.get(AdminService);
@@ -270,6 +273,7 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
           { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
       const admin = mod.get(AdminService);
@@ -297,6 +301,7 @@ describe('Fluxo Completo E2E — Bolão Copa 2026', () => {
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
           { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
       const admin = mod.get(AdminService);

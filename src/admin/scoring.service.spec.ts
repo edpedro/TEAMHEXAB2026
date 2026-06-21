@@ -5,6 +5,7 @@ import { GamificationService } from '../gamification/gamification.service';
 import { RankingGateway } from '../ranking/ranking.gateway';
 import { RankingService } from '../ranking/ranking.service';
 import { MatchesGateway } from '../matches/matches.gateway';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 describe('ScoringService', () => {
   let service: ScoringService;
@@ -23,6 +24,12 @@ describe('ScoringService', () => {
     emitMatchesBatchUpdate: jest.fn(),
     emitLiveStatus: jest.fn(),
   };
+  const mockWhatsappService = {
+    hasNotificationBeenSent: jest.fn(),
+    sendMatchFinishedNotification: jest.fn(),
+    sendRankingNotification: jest.fn(),
+    recordNotification: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -33,6 +40,7 @@ describe('ScoringService', () => {
         { provide: RankingGateway, useValue: mockRankingGateway },
         { provide: RankingService, useValue: mockRankingService },
         { provide: MatchesGateway, useValue: mockMatchesGateway },
+        { provide: WhatsappService, useValue: mockWhatsappService },
       ],
     }).compile();
 

@@ -1,18 +1,22 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { RankingGateway } from '../ranking/ranking.gateway';
 import { RankingService } from '../ranking/ranking.service';
 import { MatchesGateway } from '../matches/matches.gateway';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 @Injectable()
 export class ScoringService {
+  private readonly logger = new Logger(ScoringService.name);
+
   constructor(
     private prisma: PrismaService,
     private gamificationService: GamificationService,
     private rankingGateway: RankingGateway,
     private rankingService: RankingService,
     private matchesGateway: MatchesGateway,
+    private whatsappService: WhatsappService,
   ) {}
 
   async calculateAndDistributePoints(matchId: string) {
@@ -26,6 +30,9 @@ export class ScoringService {
 
     const predictions = await this.prisma.prediction.findMany({
       where: { matchId },
+      include: {
+        user: { select: { fullName: true } },
+      },
     });
 
     for (const prediction of predictions) {
@@ -40,6 +47,7 @@ export class ScoringService {
         where: { id: prediction.id },
         data: { pointsEarned: points },
       });
+      prediction.pointsEarned = points;
 
       await this.gamificationService.checkAndAwardAchievements(prediction.userId);
     }
@@ -52,6 +60,46 @@ export class ScoringService {
     });
     if (updatedMatch) {
       this.matchesGateway.emitMatchUpdate(updatedMatch);
+    }
+
+    await this.sendWhatsAppNotifications(match, predictions, ranking);
+  }
+
+  private async sendWhatsAppNotifications(
+    match: { id: string; teamHome: string; teamAway: string; flagHome: string | null; flagAway: string | null; homeScore: number | null; awayScore: number | null; status: string },
+    predictions: { id: string; predictedHome: number; predictedAway: number; pointsEarned: number | null; user: { fullName: string } }[],
+    ranking: { fullName: string; position: number; score: number }[],
+  ): Promise<void> {
+    if (match.status !== 'FINISHED' || match.homeScore === null || match.awayScore === null) return;
+
+    const alreadySent = await this.whatsappService.hasNotificationBeenSent('match_finished', match.id);
+    if (alreadySent) return;
+
+    const predData = predictions.map((p) => ({
+      userName: p.user.fullName,
+      predictedHome: p.predictedHome,
+      predictedAway: p.predictedAway,
+      pointsEarned: p.pointsEarned ?? 0,
+    }));
+
+    const matchOk = await this.whatsappService.sendMatchFinishedNotification(
+      match.teamHome,
+      match.teamAway,
+      match.homeScore ?? 0,
+      match.awayScore ?? 0,
+      predData,
+    );
+
+    if (matchOk) {
+      await this.whatsappService.recordNotification('match_finished', match.id, true);
+    }
+
+    const rankOk = await this.whatsappService.sendRankingNotification(
+      ranking.map((r) => ({ position: r.position, userName: r.fullName, score: r.score })),
+    );
+
+    if (matchOk || rankOk) {
+      this.logger.log(`Notificações WhatsApp enviadas para partida ${match.id}`);
     }
   }
 

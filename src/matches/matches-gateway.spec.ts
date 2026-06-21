@@ -6,6 +6,7 @@ import { GamificationService } from '../gamification/gamification.service';
 import { RankingGateway } from '../ranking/ranking.gateway';
 import { RankingService } from '../ranking/ranking.service';
 import { MatchesService } from './matches.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 describe('MatchesGateway — Emissão WebSocket', () => {
   // ─── Testes unitários do gateway ─────────────────────────────
@@ -72,6 +73,12 @@ describe('MatchesGateway — Emissão WebSocket', () => {
       mockRankingGateway = { emitRankingUpdate: jest.fn() };
       mockRankingService = { getRanking: jest.fn() };
       mockGamification = { checkAndAwardAchievements: jest.fn() };
+      const mockWhatsapp = {
+        hasNotificationBeenSent: jest.fn(),
+        sendMatchFinishedNotification: jest.fn(),
+        sendRankingNotification: jest.fn(),
+        recordNotification: jest.fn(),
+      };
 
       const module: TestingModule = await Test.createTestingModule({
         providers: [
@@ -81,6 +88,7 @@ describe('MatchesGateway — Emissão WebSocket', () => {
           { provide: RankingGateway, useValue: mockRankingGateway },
           { provide: RankingService, useValue: mockRankingService },
           { provide: MatchesGateway, useValue: mockGateway },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
 
@@ -102,7 +110,7 @@ describe('MatchesGateway — Emissão WebSocket', () => {
         .mockResolvedValueOnce(match);              // 2ª chamada: buscar match atualizado para emitir
 
       mockPrisma.prediction.findMany.mockResolvedValue([
-        { id: 'p1', userId: 'u1', predictedHome: 2, predictedAway: 1, pointsEarned: null },
+        { id: 'p1', userId: 'u1', predictedHome: 2, predictedAway: 1, pointsEarned: null, user: { fullName: 'Test User' } },
       ]);
       mockPrisma.prediction.update.mockResolvedValue({});
       mockRankingService.getRanking.mockResolvedValue([{ id: 'u1', score: 5 }]);
@@ -126,7 +134,7 @@ describe('MatchesGateway — Emissão WebSocket', () => {
         .mockResolvedValueOnce(match)
         .mockResolvedValueOnce(match);
       mockPrisma.prediction.findMany.mockResolvedValue([
-        { id: 'p1', userId: 'u1', predictedHome: 2, predictedAway: 1, pointsEarned: null },
+        { id: 'p1', userId: 'u1', predictedHome: 2, predictedAway: 1, pointsEarned: null, user: { fullName: 'Test User' } },
       ]);
       mockPrisma.prediction.update.mockResolvedValue({});
       mockRankingService.getRanking.mockResolvedValue(ranking);

@@ -16,6 +16,7 @@ import { FootballApiModule } from './football-api/football-api.module';
 import { TopScorersModule } from './top-scorers/top-scorers.module';
 import { ReceiptsModule } from './receipts/receipts.module';
 import { WorldcupModule } from './worldcup/worldcup.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { WorldcupModule } from './worldcup/worldcup.module';
     TopScorersModule,
     ReceiptsModule,
     WorldcupModule,
+    WhatsappModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

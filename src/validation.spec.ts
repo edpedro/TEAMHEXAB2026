@@ -14,7 +14,10 @@ import { RankingService } from './ranking/ranking.service';
 import { NotificationsService } from './notifications/notifications.service';
 import { ReceiptsService } from './receipts/receipts.service';
 import { MatchesGateway } from './matches/matches.gateway';
+import { WhatsappService } from './whatsapp/whatsapp.service';
 import { Role } from '@prisma/client';
+
+const mockWhatsapp = { hasNotificationBeenSent: jest.fn(), sendMatchFinishedNotification: jest.fn(), sendRankingNotification: jest.fn(), recordNotification: jest.fn() };
 
 describe('Validações de Input', () => {
   describe('V01-V03 — Placar (AdminService.setResult)', () => {
@@ -45,6 +48,7 @@ describe('Validações de Input', () => {
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
           { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
 
@@ -92,6 +96,7 @@ describe('Validações de Input', () => {
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
           { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
 
@@ -135,6 +140,7 @@ describe('Validações de Input', () => {
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
           { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
 

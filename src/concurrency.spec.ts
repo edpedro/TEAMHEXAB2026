@@ -11,7 +11,10 @@ import { PredictionsService } from './predictions/predictions.service';
 import { AdminService } from './admin/admin.service';
 import { NotificationsService } from './notifications/notifications.service';
 import { ReceiptsService } from './receipts/receipts.service';
+import { WhatsappService } from './whatsapp/whatsapp.service';
 import { MatchStatus } from '@prisma/client';
+
+const mockWhatsapp = { hasNotificationBeenSent: jest.fn(), sendMatchFinishedNotification: jest.fn(), sendRankingNotification: jest.fn(), recordNotification: jest.fn() };
 
 describe('Concorrência e Race Conditions', () => {
   describe('R01 — Dois CRONs simultâneos', () => {
@@ -134,8 +137,8 @@ describe('Concorrência e Race Conditions', () => {
         id: 'm1', homeScore: 2, awayScore: 1, status: 'FINISHED',
       });
       p.prediction.findMany.mockResolvedValue([
-        { id: 'p1', userId: 'u1', predictedHome: 2, predictedAway: 1, pointsEarned: null },
-        { id: 'p2', userId: 'u2', predictedHome: 1, predictedAway: 1, pointsEarned: null },
+        { id: 'p1', userId: 'u1', predictedHome: 2, predictedAway: 1, pointsEarned: null, user: { fullName: 'User Um' } },
+        { id: 'p2', userId: 'u2', predictedHome: 1, predictedAway: 1, pointsEarned: null, user: { fullName: 'User Dois' } },
       ]);
       p.prediction.update.mockResolvedValue({});
 
@@ -147,6 +150,7 @@ describe('Concorrência e Race Conditions', () => {
           { provide: RankingGateway, useValue: mockRg },
           { provide: RankingService, useValue: mockRs },
           { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
       const svc = mod.get(ScoringService);
@@ -194,6 +198,7 @@ describe('Concorrência e Race Conditions', () => {
           { provide: NotificationsService, useValue: {} },
           { provide: ReceiptsService, useValue: { findAll: jest.fn(), approve: jest.fn(), reject: jest.fn() } },
           { provide: MatchesGateway, useValue: { emitMatchUpdate: jest.fn(), emitMatchesBatchUpdate: jest.fn(), emitLiveStatus: jest.fn() } },
+          { provide: WhatsappService, useValue: mockWhatsapp },
         ],
       }).compile();
       const admin = mod.get(AdminService);

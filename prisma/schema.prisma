@@ -160,6 +160,37 @@ model PaymentReceipt {
   @@map("payment_receipts")
 }
 
+model WhatsAppSession {
+  id          String   @id @default(uuid()) @db.Uuid
+  sessionName String   @default("default") @map("session_name") @db.VarChar(50)
+  status      String   @default("DISCONNECTED") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("whatsapp_sessions")
+}
+
+model WhatsAppGroup {
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @unique @map("group_id") @db.VarChar(100)
+  groupName String   @map("group_name") @db.VarChar(200)
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("whatsapp_groups")
+}
+
+model WhatsAppNotification {
+  id      String   @id @default(uuid()) @db.Uuid
+  type    String   @db.VarChar(50)
+  matchId String?  @map("match_id") @db.Uuid
+  sentAt  DateTime @default(now()) @map("sent_at")
+  success Boolean  @default(true)
+  error   String?  @db.Text
+
+  @@map("whatsapp_notifications")
+}
+
 model AuditLog {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @map("user_id") @db.Uuid

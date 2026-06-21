@@ -228,9 +228,7 @@ export class FootballApiService implements OnModuleInit {
           });
           updatedMatches++;
 
-          if (needsScoreUpdate && updateData.status === MatchStatus.FINISHED) {
-            await this.scoringService.calculateAndDistributePoints(existing.id);
-          } else if (needsScoreUpdate && existing.status === MatchStatus.FINISHED) {
+          if (updateData.status === MatchStatus.FINISHED) {
             await this.scoringService.calculateAndDistributePoints(existing.id);
           }
         }

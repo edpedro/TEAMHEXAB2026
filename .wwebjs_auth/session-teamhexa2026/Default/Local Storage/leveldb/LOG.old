@@ -1,0 +1,6 @@
+2026/06/20-20:41:01.230 44b4 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Local Storage\leveldb/MANIFEST-000001
+2026/06/20-20:41:01.276 44b4 Recovering log #7
+2026/06/20-20:41:01.277 44b4 Reusing old log C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Local Storage\leveldb/000007.log 
+2026/06/20-21:11:14.898 7c4 Level-0 table #11: started
+2026/06/20-21:11:14.905 7c4 Level-0 table #11: 13715 bytes OK
+2026/06/20-21:11:14.907 7c4 Delete type=0 #7
