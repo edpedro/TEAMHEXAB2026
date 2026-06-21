@@ -17,8 +17,12 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-# Dependências do Chrome para Puppeteer
+# Chromium para Puppeteer/whatsapp-web.js
 RUN apt-get update && apt-get install -y \
+    chromium \
+    chromium-common \
+    chromium-sandbox \
+    unzip \
     wget \
     ca-certificates \
     fonts-liberation \
@@ -43,8 +47,8 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Não pula download do Chrome — precisamos que o npm ci baixe o Chrome para o Puppeteer
-# Usaremos PUPPETEER_SKIP_DOWNLOAD apenas se definirmos executablePath manualmente
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
