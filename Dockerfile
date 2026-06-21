@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM node:20-bookworm-slim AS build
 
 WORKDIR /app
 
@@ -11,14 +11,19 @@ RUN npx prisma generate
 COPY tsconfig.json nest-cli.json ./
 COPY src ./src/
 
-# Build com verificação — falha explicitamente se dist não for gerado
 RUN npm run build && ls -la dist/
 
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache tzdata openssl
+RUN apt-get update && apt-get install -y \
+    chromium \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
@@ -26,13 +31,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY prisma ./prisma/
 RUN npx prisma generate
 
-# Copia o dist do estágio de build
 COPY --from=build /app/dist ./dist
 
-# Verifica se o dist foi copiado corretamente
-RUN ls -la dist/ && echo "✅ dist/main.js existe" || (echo "❌ dist/ vazio!" && exit 1)
+RUN ls -la dist/ && echo "dist/main.js existe" || (echo "dist/ vazio!" && exit 1)
 
-# Cria pasta uploads
 RUN mkdir -p /app/uploads
 
 ENV NODE_ENV=production
