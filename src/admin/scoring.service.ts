@@ -67,7 +67,7 @@ export class ScoringService {
 
   private async sendWhatsAppNotifications(
     match: { id: string; teamHome: string; teamAway: string; flagHome: string | null; flagAway: string | null; homeScore: number | null; awayScore: number | null; status: string },
-    predictions: { id: string; predictedHome: number; predictedAway: number; pointsEarned: number | null; user: { fullName: string } }[],
+    predictions: { id: string; predictedHome: number; predictedAway: number; pointsEarned: number | null; createdAt: Date; user: { fullName: string } }[],
     ranking: { fullName: string; position: number; score: number }[],
   ): Promise<void> {
     if (match.status !== 'FINISHED' || match.homeScore === null || match.awayScore === null) return;
@@ -80,6 +80,7 @@ export class ScoringService {
       predictedHome: p.predictedHome,
       predictedAway: p.predictedAway,
       pointsEarned: p.pointsEarned ?? 0,
+      createdAt: p.createdAt,
     }));
 
     const matchOk = await this.whatsappService.sendMatchFinishedNotification(
