@@ -1,3 +1,2 @@
-2026/06/21-12:40:37.083 3a20 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Service Worker\Database/MANIFEST-000001
-2026/06/21-12:40:37.106 3a20 Recovering log #3
-2026/06/21-12:40:37.108 3a20 Reusing old log C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Service Worker\Database/000003.log 
+2026/06/24-11:52:06.031 5328 Creating DB C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Service Worker\Database since it was missing.
+2026/06/24-11:52:06.089 5328 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Service Worker\Database/MANIFEST-000001

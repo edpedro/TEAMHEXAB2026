@@ -66,41 +66,50 @@ export class ScoringService {
   }
 
   private async sendWhatsAppNotifications(
-    match: { id: string; teamHome: string; teamAway: string; flagHome: string | null; flagAway: string | null; homeScore: number | null; awayScore: number | null; status: string },
-    predictions: { id: string; predictedHome: number; predictedAway: number; pointsEarned: number | null; createdAt: Date; user: { fullName: string } }[],
-    ranking: { fullName: string; position: number; score: number }[],
+    match: { id: string; teamHome: string; teamAway: string; teamHomeIso: string | null; teamAwayIso: string | null; flagHome: string | null; flagAway: string | null; homeScore: number | null; awayScore: number | null; status: string; matchDate: Date },
+    predictions: { id: string; userId: string; predictedHome: number; predictedAway: number; pointsEarned: number | null; createdAt: Date; user: { fullName: string } }[],
+    ranking: { id: string; fullName: string; position: number; score: number }[],
   ): Promise<void> {
     if (match.status !== 'FINISHED' || match.homeScore === null || match.awayScore === null) return;
 
     const alreadySent = await this.whatsappService.hasNotificationBeenSent('match_finished', match.id);
     if (alreadySent) return;
 
-    const predData = predictions.map((p) => ({
-      userName: p.user.fullName,
-      predictedHome: p.predictedHome,
-      predictedAway: p.predictedAway,
-      pointsEarned: p.pointsEarned ?? 0,
-      createdAt: p.createdAt,
-    }));
+    const now = new Date();
+    const brtDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const todayStart = new Date(`${brtDateStr}T00:00:00-03:00`);
+    const todayEnd = new Date(`${brtDateStr}T23:59:59-03:00`);
+    if (match.matchDate < todayStart || match.matchDate > todayEnd) return;
+
+    const top5 = ranking.slice(0, 5);
+    const topLeaders = top5.map((r) => {
+      const pred = predictions.find((p) => p.userId === r.id);
+      return {
+        position: r.position,
+        userName: r.fullName,
+        totalScore: r.score,
+        predictedHome: pred?.predictedHome ?? null,
+        predictedAway: pred?.predictedAway ?? null,
+        pointsEarned: pred?.pointsEarned ?? null,
+      };
+    });
 
     const matchOk = await this.whatsappService.sendMatchFinishedNotification(
       match.teamHome,
       match.teamAway,
       match.homeScore ?? 0,
       match.awayScore ?? 0,
-      predData,
+      topLeaders,
+      match.teamHomeIso,
+      match.teamAwayIso,
     );
 
     if (matchOk) {
       await this.whatsappService.recordNotification('match_finished', match.id, true);
     }
 
-    const rankOk = await this.whatsappService.sendRankingNotification(
-      ranking.map((r) => ({ position: r.position, userName: r.fullName, score: r.score })),
-    );
-
-    if (matchOk || rankOk) {
-      this.logger.log(`Notificações WhatsApp enviadas para partida ${match.id}`);
+    if (matchOk) {
+      this.logger.log(`Notificação WhatsApp enviada para partida ${match.id}`);
     }
   }
 

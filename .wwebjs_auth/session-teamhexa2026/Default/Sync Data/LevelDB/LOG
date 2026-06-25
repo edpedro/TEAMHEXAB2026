@@ -1,3 +1,2 @@
-2026/06/21-12:40:37.088 1c98 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Sync Data\LevelDB/MANIFEST-000001
-2026/06/21-12:40:37.129 1c98 Recovering log #3
-2026/06/21-12:40:37.131 1c98 Reusing old log C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Sync Data\LevelDB/000003.log 
+2026/06/24-11:51:51.383 14a4 Creating DB C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Sync Data\LevelDB since it was missing.
+2026/06/24-11:51:51.397 14a4 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Sync Data\LevelDB/MANIFEST-000001

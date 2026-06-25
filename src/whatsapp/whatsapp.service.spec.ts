@@ -78,6 +78,23 @@ describe('WhatsappService', () => {
     jest.useRealTimers();
   });
 
+  // --- getTodayBrtRange ---
+  describe('getTodayBrtRange', () => {
+    it('deve retornar range com início antes do fim', () => {
+      const range = (service as any).getTodayBrtRange();
+      expect(range.start instanceof Date).toBe(true);
+      expect(range.end instanceof Date).toBe(true);
+      expect(range.start.getTime()).toBeLessThan(range.end.getTime());
+    });
+
+    it('deve cobrir todo o dia atual', () => {
+      const range = (service as any).getTodayBrtRange();
+      const now = Date.now();
+      expect(now).toBeGreaterThanOrEqual(range.start.getTime());
+      expect(now).toBeLessThanOrEqual(range.end.getTime());
+    });
+  });
+
   // --- getStatus ---
   describe('getStatus', () => {
     it('deve retornar DISCONNECTED por padrão', () => {
@@ -112,7 +129,9 @@ describe('WhatsappService', () => {
     });
 
     it('deve capturar erro de inicialização sem lançar exceção', async () => {
-      mockInitialize.mockRejectedValueOnce(new Error('Falha na inicialização'));
+      mockInitialize
+        .mockRejectedValueOnce(new Error('Falha na inicialização'))
+        .mockRejectedValueOnce(new Error('Falha na inicialização'));
       await service.connect();
       expect(service.getStatus().status).toBe('DISCONNECTED');
     });
@@ -159,7 +178,7 @@ describe('WhatsappService', () => {
       expect(client.sendMessage).toHaveBeenCalledWith('group-id-1', expect.stringContaining('mensagem de teste'));
     });
 
-    it('deve adicionar footer Robô', async () => {
+    it('deve enviar mensagem sem footer automático', async () => {
       prisma.whatsAppGroup.findFirst.mockResolvedValue({
         groupId: 'group-id-1',
         groupName: 'Grupo Teste',
@@ -168,8 +187,8 @@ describe('WhatsappService', () => {
       const client = Client.mock.results[0].value;
       client.sendMessage.mockResolvedValueOnce(true);
 
-      await (service as any).sendToGroup('teste');
-      expect(client.sendMessage).toHaveBeenCalledWith('group-id-1', expect.stringContaining('🤖 Robô'));
+      await (service as any).sendToGroup('mensagem sem footer');
+      expect(client.sendMessage).toHaveBeenCalledWith('group-id-1', 'mensagem sem footer');
     });
 
     it('deve fazer retry 1x após falha e logar detalhes', async () => {
@@ -242,22 +261,33 @@ describe('WhatsappService', () => {
 
   // --- sendPredictionClosingNotification ---
   describe('sendPredictionClosingNotification', () => {
-    it('deve formatar mensagem corretamente e enviar', async () => {
+    it('deve formatar mensagem corretamente com novo formato', async () => {
       const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
       const matchDate = new Date('2026-06-25T21:00:00-03:00');
 
-      const result = await service.sendPredictionClosingNotification('Brasil', 'Argentina', matchDate);
+      const result = await service.sendPredictionClosingNotification('Brasil', 'Argentina', matchDate, 'BR', 'AR');
 
       expect(result).toBe(true);
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining('⚠️ Atenção, participantes!'),
+      );
       expect(spy).toHaveBeenCalledWith(
         expect.stringContaining('Brasil x Argentina'),
       );
       expect(spy).toHaveBeenCalledWith(
-        expect.stringContaining('21:00'),
+        expect.stringContaining('Após o bloqueio não será mais possível'),
       );
       expect(spy).toHaveBeenCalledWith(
-        expect.stringContaining('⚽ Atenção, participantes!'),
+        expect.stringContaining('🤖 Robô do Bolão.'),
       );
+    });
+
+    it('deve incluir bandeiras quando ISO é fornecido', async () => {
+      const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
+      await service.sendPredictionClosingNotification('Brasil', 'Argentina', new Date(), 'BR', 'AR');
+      const msg = spy.mock.calls[0][0] as string;
+      expect(msg).toContain('🇧🇷');
+      expect(msg).toContain('🇦🇷');
     });
 
     it('não deve lançar exceção se sendToGroup falhar', async () => {
@@ -271,33 +301,39 @@ describe('WhatsappService', () => {
 
   // --- sendMatchFinishedNotification ---
   describe('sendMatchFinishedNotification', () => {
-    it('deve formatar resultado e palpites corretamente', async () => {
+    it('deve formatar resultado e top 5 líderes corretamente', async () => {
       const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
-      const predictions = [
-        { userName: 'João', predictedHome: 2, predictedAway: 1, pointsEarned: 5 },
-        { userName: 'Maria', predictedHome: 1, predictedAway: 1, pointsEarned: 3 },
-        { userName: 'Pedro', predictedHome: 0, predictedAway: 2, pointsEarned: 0 },
+      const topLeaders = [
+        { position: 1, userName: 'João Silva', totalScore: 85, predictedHome: 2, predictedAway: 1, pointsEarned: 5 },
+        { position: 2, userName: 'Maria Souza', totalScore: 82, predictedHome: 1, predictedAway: 0, pointsEarned: 3 },
+        { position: 3, userName: 'Pedro Santos', totalScore: 80, predictedHome: 2, predictedAway: 2, pointsEarned: 0 },
+        { position: 4, userName: 'Ana Souza', totalScore: 78, predictedHome: 1, predictedAway: 1, pointsEarned: 3 },
+        { position: 5, userName: 'Carlos Lima', totalScore: 75, predictedHome: 3, predictedAway: 1, pointsEarned: 3 },
       ];
 
-      const result = await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, predictions);
+      const result = await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, topLeaders, 'BR', 'AR');
 
       expect(result).toBe(true);
       expect(spy).toHaveBeenCalledWith(
-        expect.stringContaining('Brasil 2 x 1 Argentina'),
+        expect.stringContaining('🇧🇷 Brasil 2 x 1 Argentina 🇦🇷'),
       );
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('🏆 Líderes do Bolão'));
       expect(spy).toHaveBeenCalledWith(expect.stringContaining('🥇'));
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining('5 pts'));
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('85 pontos'));
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining('🤖 Robô do Bolão.'),
+      );
     });
 
-    it('deve ordenar por pontos (maior primeiro)', async () => {
+    it('deve exibir líderes na ordem do ranking com separador ---', async () => {
       const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
-      const predictions = [
-        { userName: 'Pedro', predictedHome: 0, predictedAway: 2, pointsEarned: 0 },
-        { userName: 'João', predictedHome: 2, predictedAway: 1, pointsEarned: 5 },
-        { userName: 'Maria', predictedHome: 1, predictedAway: 1, pointsEarned: 3 },
+      const topLeaders = [
+        { position: 1, userName: 'João', totalScore: 85, predictedHome: 2, predictedAway: 1, pointsEarned: 5 },
+        { position: 2, userName: 'Maria', totalScore: 82, predictedHome: 1, predictedAway: 1, pointsEarned: 3 },
+        { position: 3, userName: 'Pedro', totalScore: 80, predictedHome: 0, predictedAway: 2, pointsEarned: 0 },
       ];
 
-      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, predictions);
+      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, topLeaders);
 
       const sentMessage = spy.mock.calls[0][0] as string;
       const joaoPos = sentMessage.indexOf('João');
@@ -305,39 +341,27 @@ describe('WhatsappService', () => {
       const pedroPos = sentMessage.indexOf('Pedro');
       expect(joaoPos).toBeLessThan(mariaPos);
       expect(mariaPos).toBeLessThan(pedroPos);
+      expect(sentMessage).toContain('---');
     });
 
-    it('deve usar createdAt como desempate quando pontos são iguais', async () => {
+    it('deve exibir todos os líderes passados sem cortar', async () => {
       const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
-      const predictions = [
-        { userName: 'João', predictedHome: 2, predictedAway: 1, pointsEarned: 5, createdAt: new Date('2026-06-20T10:00:00') },
-        { userName: 'Maria', predictedHome: 1, predictedAway: 0, pointsEarned: 5, createdAt: new Date('2026-06-20T09:00:00') },
-      ];
-
-      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, predictions);
-
-      const sentMessage = spy.mock.calls[0][0] as string;
-      const mariaPos = sentMessage.indexOf('Maria');
-      const joaoPos = sentMessage.indexOf('João');
-      expect(mariaPos).toBeLessThan(joaoPos);
-    });
-
-    it('deve exibir apenas top 3', async () => {
-      const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
-      const predictions = Array.from({ length: 10 }, (_, i) => ({
-        userName: `User${i}`, predictedHome: 1, predictedAway: 0, pointsEarned: i,
+      const topLeaders = Array.from({ length: 10 }, (_, i) => ({
+        position: i + 1, userName: `User${i}`, totalScore: 100 - i,
+        predictedHome: 1, predictedAway: 0, pointsEarned: i,
       }));
 
-      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 1, 0, predictions);
+      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 1, 0, topLeaders);
 
       const sentMessage = spy.mock.calls[0][0] as string;
       expect(sentMessage).toContain('🥇');
       expect(sentMessage).toContain('🥈');
       expect(sentMessage).toContain('🥉');
-      expect(sentMessage).not.toContain('User6');
+      expect(sentMessage).toContain('User6');
+      expect(sentMessage).toContain('User9');
     });
 
-    it('deve exibir mensagem se não houver palpites', async () => {
+    it('deve exibir mensagem se não houver líderes', async () => {
       const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
 
       await service.sendMatchFinishedNotification('Brasil', 'Argentina', 1, 0, []);
@@ -345,33 +369,59 @@ describe('WhatsappService', () => {
       expect(spy).toHaveBeenCalledWith(expect.stringContaining('Nenhum palpite registrado'));
     });
 
-    it('deve funcionar com menos de 3 participantes', async () => {
+    it('deve funcionar com menos de 3 líderes', async () => {
       const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
-      const predictions = [
-        { userName: 'João', predictedHome: 2, predictedAway: 1, pointsEarned: 5 },
+      const topLeaders = [
+        { position: 1, userName: 'João', totalScore: 100, predictedHome: 2, predictedAway: 1, pointsEarned: 5 },
       ];
 
-      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, predictions);
+      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, topLeaders);
 
       const sentMessage = spy.mock.calls[0][0] as string;
       expect(sentMessage).toContain('🥇');
       expect(sentMessage).not.toContain('🥈');
     });
 
-    it('deve exibir medalhas corretas', async () => {
+    it('deve exibir medalhas corretas por posição (🥇🥈🥉🏅)', async () => {
       const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
-      const predictions = [
-        { userName: 'A', predictedHome: 1, predictedAway: 0, pointsEarned: 5 },
-        { userName: 'B', predictedHome: 0, predictedAway: 0, pointsEarned: 3 },
-        { userName: 'C', predictedHome: 2, predictedAway: 2, pointsEarned: 0 },
+      const topLeaders = [
+        { position: 1, userName: 'A', totalScore: 100, predictedHome: 1, predictedAway: 0, pointsEarned: 5 },
+        { position: 2, userName: 'B', totalScore: 90, predictedHome: 0, predictedAway: 0, pointsEarned: 3 },
+        { position: 3, userName: 'C', totalScore: 80, predictedHome: 2, predictedAway: 2, pointsEarned: 0 },
       ];
 
-      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 1, 0, predictions);
+      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 1, 0, topLeaders);
 
       const sentMessage = spy.mock.calls[0][0] as string;
       expect(sentMessage).toContain('🥇 A');
       expect(sentMessage).toContain('🥈 B');
       expect(sentMessage).toContain('🥉 C');
+    });
+
+    it('deve exibir "—" quando líder não fez palpite na partida', async () => {
+      const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
+      const topLeaders = [
+        { position: 1, userName: 'João', totalScore: 100, predictedHome: null, predictedAway: null, pointsEarned: null },
+      ];
+
+      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, topLeaders);
+
+      const sentMessage = spy.mock.calls[0][0] as string;
+      expect(sentMessage).toContain('Palpite: —');
+      expect(sentMessage).toContain('Pontos obtidos no jogo: 0');
+    });
+
+    it('deve incluir bandeiras quando ISO é fornecido', async () => {
+      const spy = jest.spyOn(service as any, 'sendToGroup').mockResolvedValue(true);
+      const topLeaders = [
+        { position: 1, userName: 'João', totalScore: 100, predictedHome: 2, predictedAway: 1, pointsEarned: 5 },
+      ];
+
+      await service.sendMatchFinishedNotification('Brasil', 'Argentina', 2, 1, topLeaders, 'BR', 'AR');
+
+      const sentMessage = spy.mock.calls[0][0] as string;
+      expect(sentMessage).toContain('🇧🇷');
+      expect(sentMessage).toContain('🇦🇷');
     });
   });
 
@@ -494,16 +544,16 @@ describe('WhatsappService', () => {
 
   // --- checkAndSendClosingNotification ---
   describe('checkAndSendClosingNotification', () => {
-    it('deve chamar sendPredictionClosingNotification e retornar true', async () => {
+    it('deve chamar sendPredictionClosingNotification com ISO codes e retornar true', async () => {
       const spy = jest.spyOn(service as any, 'sendPredictionClosingNotification').mockResolvedValue(true);
-      const result = await service.checkAndSendClosingNotification('Brasil', 'Argentina', new Date());
+      const result = await service.checkAndSendClosingNotification('Brasil', 'Argentina', new Date(), 'BR', 'AR');
       expect(result).toBe(true);
-      expect(spy).toHaveBeenCalledWith('Brasil', 'Argentina', expect.any(Date));
+      expect(spy).toHaveBeenCalledWith('Brasil', 'Argentina', expect.any(Date), 'BR', 'AR');
     });
 
     it('deve chamar sendPredictionClosingNotification e retornar false se falhar', async () => {
       const spy = jest.spyOn(service as any, 'sendPredictionClosingNotification').mockResolvedValue(false);
-      const result = await service.checkAndSendClosingNotification('Brasil', 'Argentina', new Date());
+      const result = await service.checkAndSendClosingNotification('Time A', 'Time B', new Date());
       expect(result).toBe(false);
     });
   });
@@ -528,6 +578,7 @@ describe('WhatsappService', () => {
       prisma.match.findMany.mockResolvedValue([
         {
           id: 'm1', teamHome: 'Brasil', teamAway: 'Argentina',
+          teamHomeIso: 'BR', teamAwayIso: 'AR',
           matchDate,
           status: 'SCHEDULED',
         },
@@ -538,7 +589,7 @@ describe('WhatsappService', () => {
 
       await service.handlePredictionClosingCheck();
 
-      expect(sendSpy).toHaveBeenCalledWith('Brasil', 'Argentina', expect.any(Date));
+      expect(sendSpy).toHaveBeenCalledWith('Brasil', 'Argentina', expect.any(Date), 'BR', 'AR');
     });
 
     it('deve ignorar match já notificada (dedup)', async () => {
@@ -610,6 +661,77 @@ describe('WhatsappService', () => {
             matchId: 'm1',
             success: false,
             error: 'Falha ao enviar',
+          }),
+        }),
+      );
+    });
+
+    it('deve processar múltiplos jogos no mesmo dia na janela', async () => {
+      prisma.whatsAppGroup.findFirst.mockResolvedValue({
+        groupId: 'g1', groupName: 'Grupo Teste',
+      });
+
+      const match1Date = new Date(Date.now() + 32 * 60 * 1000);
+      const match2Date = new Date(Date.now() + 33 * 60 * 1000);
+      prisma.match.findMany.mockResolvedValue([
+        { id: 'm1', teamHome: 'Brasil', teamAway: 'Argentina', teamHomeIso: 'BR', teamAwayIso: 'AR', matchDate: match1Date, status: 'SCHEDULED' },
+        { id: 'm2', teamHome: 'EUA', teamAway: 'México', teamHomeIso: 'US', teamAwayIso: 'MX', matchDate: match2Date, status: 'SCHEDULED' },
+      ]);
+
+      prisma.whatsAppNotification.findFirst.mockResolvedValue(null);
+      const sendSpy = jest.spyOn(service, 'sendPredictionClosingNotification' as any).mockResolvedValue(true);
+
+      await service.handlePredictionClosingCheck();
+
+      expect(sendSpy).toHaveBeenCalledTimes(2);
+      expect(sendSpy).toHaveBeenCalledWith('Brasil', 'Argentina', expect.any(Date), 'BR', 'AR');
+      expect(sendSpy).toHaveBeenCalledWith('EUA', 'México', expect.any(Date), 'US', 'MX');
+    });
+
+    it('deve ignorar jogos de outros dias fora da janela', async () => {
+      prisma.whatsAppGroup.findFirst.mockResolvedValue({
+        groupId: 'g1', groupName: 'Grupo Teste',
+      });
+
+      const futureDate = new Date(Date.now() + 48 * 60 * 60 * 1000); // 2 dias no futuro
+      prisma.match.findMany.mockResolvedValue([
+        { id: 'm1', teamHome: 'Brasil', teamAway: 'Argentina', teamHomeIso: 'BR', teamAwayIso: 'AR', matchDate: futureDate, status: 'SCHEDULED' },
+      ]);
+
+      const sendSpy = jest.spyOn(service, 'sendPredictionClosingNotification' as any);
+
+      await service.handlePredictionClosingCheck();
+
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+
+    it('deve continuar processando outros jogos se um falhar', async () => {
+      prisma.whatsAppGroup.findFirst.mockResolvedValue({
+        groupId: 'g1', groupName: 'Grupo Teste',
+      });
+
+      const match1Date = new Date(Date.now() + 32 * 60 * 1000);
+      const match2Date = new Date(Date.now() + 33 * 60 * 1000);
+      prisma.match.findMany.mockResolvedValue([
+        { id: 'm1', teamHome: 'Brasil', teamAway: 'Argentina', teamHomeIso: 'BR', teamAwayIso: 'AR', matchDate: match1Date, status: 'SCHEDULED' },
+        { id: 'm2', teamHome: 'EUA', teamAway: 'México', teamHomeIso: 'US', teamAwayIso: 'MX', matchDate: match2Date, status: 'SCHEDULED' },
+      ]);
+
+      prisma.whatsAppNotification.findFirst.mockResolvedValue(null);
+      const sendSpy = jest.spyOn(service, 'sendPredictionClosingNotification' as any)
+        .mockRejectedValueOnce(new Error('Falha'))
+        .mockResolvedValueOnce(true);
+
+      await service.handlePredictionClosingCheck();
+
+      expect(sendSpy).toHaveBeenCalledTimes(2);
+      expect(prisma.whatsAppNotification.create).toHaveBeenCalledTimes(1);
+      expect(prisma.whatsAppNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: 'prediction_closing',
+            matchId: 'm2',
+            success: true,
           }),
         }),
       );

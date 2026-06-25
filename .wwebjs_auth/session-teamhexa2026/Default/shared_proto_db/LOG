@@ -1,3 +1,2 @@
-2026/06/21-12:40:37.548 1c98 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\shared_proto_db/MANIFEST-000001
-2026/06/21-12:40:37.550 1c98 Recovering log #3
-2026/06/21-12:40:37.557 1c98 Reusing old log C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\shared_proto_db/000003.log 
+2026/06/24-11:51:51.801 4aa0 Creating DB C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\shared_proto_db since it was missing.
+2026/06/24-11:51:51.829 4aa0 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\shared_proto_db/MANIFEST-000001

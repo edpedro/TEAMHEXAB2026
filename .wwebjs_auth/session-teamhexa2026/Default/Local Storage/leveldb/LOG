@@ -1,6 +1,8 @@
-2026/06/21-12:40:37.143 be8 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Local Storage\leveldb/MANIFEST-000001
-2026/06/21-12:40:37.145 be8 Recovering log #10
-2026/06/21-12:40:37.148 be8 Reusing old log C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Local Storage\leveldb/000010.log 
-2026/06/21-12:41:37.167 14e0 Level-0 table #14: started
-2026/06/21-12:41:37.173 14e0 Level-0 table #14: 14923 bytes OK
-2026/06/21-12:41:37.176 14e0 Delete type=0 #10
+2026/06/24-11:51:51.364 5718 Creating DB C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Local Storage\leveldb since it was missing.
+2026/06/24-11:51:51.431 5718 Reusing MANIFEST C:\Users\Eduardo\Documents\TEAMHEXA2026\backend\.wwebjs_auth\session-teamhexa2026\Default\Local Storage\leveldb/MANIFEST-000001
+2026/06/24-15:25:05.246 5328 Level-0 table #5: started
+2026/06/24-15:25:05.251 5328 Level-0 table #5: 17921 bytes OK
+2026/06/24-15:25:05.253 5328 Delete type=0 #3
+2026/06/24-20:19:01.935 5328 Level-0 table #7: started
+2026/06/24-20:19:01.941 5328 Level-0 table #7: 12889 bytes OK
+2026/06/24-20:19:01.944 5328 Delete type=0 #4

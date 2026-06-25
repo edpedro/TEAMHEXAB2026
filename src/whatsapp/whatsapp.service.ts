@@ -5,7 +5,8 @@ import { PrismaService } from '../common/prisma.service';
 import { Client, LocalAuth, GroupChat } from 'whatsapp-web.js';
 import * as QRCode from 'qrcode';
 import * as path from 'path';
-import { existsSync, unlinkSync } from 'fs';
+import { existsSync, unlinkSync, readdirSync } from 'fs';
+import { execSync } from 'child_process';
 
 const PREDICTION_LOCK_MINUTES = 30;
 
@@ -57,6 +58,23 @@ export class WhatsappService implements OnModuleDestroy {
     }
   }
 
+  private getTodayBrtRange(): { start: Date; end: Date } {
+    const now = new Date();
+    const brtDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const start = new Date(`${brtDateStr}T00:00:00-03:00`);
+    const end = new Date(`${brtDateStr}T23:59:59-03:00`);
+    return { start, end };
+  }
+
+  private isoToFlagEmoji(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const codePoints = iso
+      .toUpperCase()
+      .split('')
+      .map((char) => 0x1F1E6 + char.charCodeAt(0) - 65);
+    return String.fromCodePoint(...codePoints);
+  }
+
   getStatus(): ConnectionState {
     return { ...this.connectionState };
   }
@@ -80,18 +98,38 @@ export class WhatsappService implements OnModuleDestroy {
     }
   }
 
-  async connect(): Promise<void> {
-    if (this.client || this.connectionState.status === 'CONNECTING') {
-      return;
+  private cleanupSessionOnLogout(): void {
+    try {
+      const sessionDir = path.join(process.cwd(), '.wwebjs_auth', 'session-teamhexa2026');
+      if (existsSync(sessionDir)) {
+        const files = readdirSync(sessionDir);
+        for (const file of files) {
+          const fp = path.join(sessionDir, file);
+          try { unlinkSync(fp); } catch { /* skip locked files */ }
+        }
+        this.logger.log(`Sessão WhatsApp removida após LOGOUT (${files.length} arquivos)`);
+      }
+    } catch (err) {
+      this.logger.warn(`Falha ao limpar sessão: ${err.message}`);
     }
+  }
 
-    this.connectionState = { status: 'CONNECTING', qrCode: null, info: null };
-    this.clearQrTimeout();
-    this.cleanupOrphanedSession();
+  private forceKillOrphanedChrome(): void {
+    try {
+      const result = execSync(
+        `powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" | Where-Object { $_.CommandLine -like '*teamhexa2026*' }; if ($p) { $p | Select-Object -ExpandProperty ProcessId | ForEach-Object { Stop-Process -Id $_ -Force }; write-output \\"Killed $($p.Count) process(es)\\" } else { write-output 'No orphans' }"`,
+        { timeout: 15000, windowsHide: true, encoding: 'utf8' },
+      );
+      this.logger.log(`Verificação de Chrome órfão: ${result.toString().trim()}`);
+    } catch {
+      // non-fatal — no matching processes or PowerShell unavailable
+    }
+  }
 
+  private createClient(): Client {
     const puppeteerPath = this.config.get<string>('PUPPETEER_EXECUTABLE_PATH');
 
-    this.client = new Client({
+    const client = new Client({
       authStrategy: new LocalAuth({
         clientId: 'teamhexa2026',
       }),
@@ -121,7 +159,7 @@ export class WhatsappService implements OnModuleDestroy {
       },
     });
 
-    this.client.on('qr', async (qr: string) => {
+    client.on('qr', async (qr: string) => {
       this.logger.log('QR Code recebido');
       this.clearQrTimeout();
       try {
@@ -136,7 +174,7 @@ export class WhatsappService implements OnModuleDestroy {
       }, 60000);
     });
 
-    this.client.on('ready', async () => {
+    client.on('ready', async () => {
       this.logger.log('WhatsApp conectado');
       this.reconnectAttempts = 0;
       this.connectionState.status = 'CONNECTED';
@@ -153,9 +191,16 @@ export class WhatsappService implements OnModuleDestroy {
       }
     });
 
-    this.client.on('disconnected', async (reason: string) => {
+    client.on('disconnected', async (reason: string) => {
       this.logger.warn(`WhatsApp desconectado: ${reason}`);
       this.connectionState = { status: 'DISCONNECTED', qrCode: null, info: null };
+
+      const wasLoggedOut = reason === 'LOGOUT';
+      if (wasLoggedOut) {
+        this.logger.log('LOGOUT detectado — limpando sessão');
+        this.disconnectInitiatedByUser = true;
+      }
+
       if (this.client) {
         try {
           await this.client.destroy();
@@ -164,13 +209,24 @@ export class WhatsappService implements OnModuleDestroy {
         }
         this.client = null;
       }
-      if (!this.disconnectInitiatedByUser) {
+
+      if (wasLoggedOut) {
+        this.cleanupSessionOnLogout();
+        this.forceKillOrphanedChrome();
+        this.disconnectInitiatedByUser = false;
+        setTimeout(() => {
+          this.logger.log('Tentando reconectar após LOGOUT...');
+          this.connect().catch((err) =>
+            this.logger.error(`Falha na reconexão pós-LOGOUT: ${err.message}`),
+          );
+        }, 3000);
+      } else if (!this.disconnectInitiatedByUser) {
         this.scheduleReconnect();
       }
       this.disconnectInitiatedByUser = false;
     });
 
-    this.client.on('auth_failure', async (msg: string) => {
+    client.on('auth_failure', async (msg: string) => {
       this.logger.error(`Falha de autenticação: ${msg}`);
       this.connectionState = { status: 'DISCONNECTED', qrCode: null, info: null };
       if (this.client) {
@@ -181,6 +237,8 @@ export class WhatsappService implements OnModuleDestroy {
         }
         this.client = null;
       }
+      this.forceKillOrphanedChrome();
+      this.cleanupSessionOnLogout();
       setTimeout(() => {
         this.logger.log('Tentando reconectar após falha de autenticação...');
         this.connect().catch((err) =>
@@ -189,15 +247,44 @@ export class WhatsappService implements OnModuleDestroy {
       }, 10000);
     });
 
-    try {
-      await this.client.initialize();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Falha ao inicializar: ${msg}`);
-      this.connectionState = { status: 'DISCONNECTED', qrCode: null, info: null };
-      this.client = null;
-      if (msg.includes('already running')) {
-        this.cleanupOrphanedSession();
+    return client;
+  }
+
+  async connect(): Promise<void> {
+    if (this.client || this.connectionState.status === 'CONNECTING') {
+      return;
+    }
+
+    this.connectionState = { status: 'CONNECTING', qrCode: null, info: null };
+    this.clearQrTimeout();
+    this.cleanupOrphanedSession();
+    this.forceKillOrphanedChrome();
+
+    let current = this.createClient();
+    this.client = current;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await current.initialize();
+        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Falha ao inicializar (tentativa ${attempt}/2): ${msg}`);
+        this.connectionState = { status: 'DISCONNECTED', qrCode: null, info: null };
+        if (attempt < 2) {
+          this.logger.log('Limpando recursos e tentando novamente...');
+          this.client = null;
+          if (msg.includes('already running') || msg.includes('detached Frame')) {
+            this.forceKillOrphanedChrome();
+          }
+          this.cleanupOrphanedSession();
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          this.connectionState = { status: 'CONNECTING', qrCode: null, info: null };
+          current = this.createClient();
+          this.client = current;
+        } else {
+          this.client = null;
+        }
       }
     }
   }
@@ -316,8 +403,7 @@ export class WhatsappService implements OnModuleDestroy {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const c = await this.getClient();
-        const footer = '\n\n🤖 Robô';
-        await c.sendMessage(group.groupId, message + footer);
+        await c.sendMessage(group.groupId, message);
         return true;
       } catch (err) {
         if (attempt < maxAttempts) {
@@ -347,24 +433,21 @@ export class WhatsappService implements OnModuleDestroy {
     teamHome: string,
     teamAway: string,
     matchDate: Date,
+    teamHomeIso?: string | null,
+    teamAwayIso?: string | null,
   ): Promise<boolean> {
-    const timeStr = matchDate.toLocaleString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    });
+    const flagHome = this.isoToFlagEmoji(teamHomeIso);
+    const flagAway = this.isoToFlagEmoji(teamAwayIso);
     const message = [
-      '⚽ Atenção, participantes!',
+      '⚠️ Atenção, participantes!',
       '',
-      `Faltam apenas 5 minutos para o fechamento dos palpites da partida:`,
+      'Faltam apenas 5 minutos para o fechamento dos palpites da partida:',
       '',
-      `⚽ ${teamHome} x ${teamAway}`,
+      `${flagHome} ${teamHome} x ${teamAway} ${flagAway}`,
       '',
-      `⏰ Horário da partida: ${timeStr}`,
+      '⏰ Após o bloqueio não será mais possível alterar ou registrar palpites para esta partida.',
       '',
-      'Ainda não fez seu palpite? Corra para não perder a oportunidade de somar pontos e continuar na disputa pela liderança do ranking.',
-      '',
-      '🏆 Cada ponto pode fazer a diferença na classificação final.',
+      '🤖 Robô do Bolão.',
     ].join('\n');
     return this.sendToGroup(message);
   }
@@ -374,32 +457,46 @@ export class WhatsappService implements OnModuleDestroy {
     teamAway: string,
     homeScore: number,
     awayScore: number,
-    predictions: { userName: string; predictedHome: number; predictedAway: number; pointsEarned: number; createdAt?: string | Date }[],
+    topLeaders: {
+      position: number;
+      userName: string;
+      totalScore: number;
+      predictedHome: number | null;
+      predictedAway: number | null;
+      pointsEarned: number | null;
+    }[],
+    teamHomeIso?: string | null,
+    teamAwayIso?: string | null,
   ): Promise<boolean> {
-    const sorted = [...predictions].sort(
-      (a, b) =>
-        b.pointsEarned - a.pointsEarned ||
-        new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
-    );
+    const flagHome = this.isoToFlagEmoji(teamHomeIso);
+    const flagAway = this.isoToFlagEmoji(teamAwayIso);
     const message = [
       '🏁 Fim de jogo!',
       '',
-      `⚽ ${teamHome} ${homeScore} x ${awayScore} ${teamAway}`,
+      `${flagHome} ${teamHome} ${homeScore} x ${awayScore} ${teamAway} ${flagAway}`,
       '',
       '✅ Resultado oficial atualizado no sistema.',
       '',
-      ...(sorted.length > 0
+      ...(topLeaders.length > 0
         ? [
-            '🎯 Palpites com mais pontos:',
+            '🏆 Líderes do Bolão',
             '',
-            ...sorted
-              .slice(0, 3)
-              .map(
-                (p, i) =>
-                  `${this.getMedal(i)} ${p.userName}\nPalpite: ${p.predictedHome} x ${p.predictedAway} — ${p.pointsEarned} pts`,
-              ),
+            ...topLeaders.flatMap((l, i) => {
+              const palpite =
+                l.predictedHome !== null && l.predictedAway !== null
+                  ? `${teamHome} ${l.predictedHome} x ${l.predictedAway} ${teamAway}`
+                  : '—';
+              const lines = [
+                `${this.getMedal(l.position - 1)} ${l.userName} — ${l.totalScore} pontos`,
+                `Palpite: ${palpite}`,
+                `Pontos obtidos no jogo: ${l.pointsEarned ?? 0}`,
+              ];
+              return i < topLeaders.length - 1 ? [...lines, '', '---', ''] : lines;
+            }),
           ]
         : ['Nenhum palpite registrado para esta partida.']),
+      '',
+      '🤖 Robô do Bolão.',
     ].join('\n');
     return this.sendToGroup(message);
   }
@@ -451,61 +548,67 @@ export class WhatsappService implements OnModuleDestroy {
 
     try {
       const now = Date.now();
-      const lockWindowStart = now + 5 * 60 * 1000;
-      const lockWindowEnd = lockWindowStart + 60 * 1000;
+      const today = this.getTodayBrtRange();
 
       const matches = await this.prisma.match.findMany({
         where: {
           status: 'SCHEDULED',
           matchDate: {
-            gte: new Date(lockWindowStart - PREDICTION_LOCK_MINUTES * 60 * 1000),
-            lte: new Date(lockWindowEnd + PREDICTION_LOCK_MINUTES * 60 * 1000),
+            gte: today.start,
+            lte: today.end,
           },
         },
       });
 
-      this.logger.log(`Verificação de fechamento: ${matches.length} partida(s) na janela`);
+      this.logger.log(`Verificação de fechamento: ${matches.length} partida(s) hoje`);
 
       for (const match of matches) {
-        const lockDeadline = new Date(match.matchDate.getTime() - PREDICTION_LOCK_MINUTES * 60 * 1000).getTime();
-        const diffMin = Math.round((lockDeadline - now) / 60000);
+        try {
+          const lockDeadline = new Date(match.matchDate.getTime() - PREDICTION_LOCK_MINUTES * 60 * 1000).getTime();
+          const diffMin = Math.round((lockDeadline - now) / 60000);
 
-        this.logger.log(
-          `Jogo: ${match.teamHome} x ${match.teamAway} ` +
-          `| ID: ${match.id} ` +
-          `| Partida: ${match.matchDate.toISOString()} ` +
-          `| Bloqueio: ${new Date(lockDeadline).toISOString()} ` +
-          `| Agora: ${new Date(now).toISOString()} ` +
-          `| Diferença para bloqueio: ${diffMin}min`,
-        );
-
-        if (now >= lockDeadline - 5 * 60 * 1000 && now < lockDeadline) {
-          const alreadySent = await this.hasNotificationBeenSent('prediction_closing', match.id);
-          if (alreadySent) {
-            this.logger.log(`Notificação já enviada para ${match.teamHome} x ${match.teamAway} — ignorando`);
-            continue;
-          }
-
-          this.logger.log(`Enviando notificação de fechamento para ${match.teamHome} x ${match.teamAway}`);
-          const sent = await this.sendPredictionClosingNotification(
-            match.teamHome,
-            match.teamAway,
-            match.matchDate,
-          );
-
-          if (sent) {
-            await this.recordNotification('prediction_closing', match.id, true);
-            this.logger.log(`Notificação de fechamento enviada com sucesso para ${match.teamHome} x ${match.teamAway}`);
-          } else {
-            this.logger.error(`Falha ao enviar notificação de fechamento para ${match.teamHome} x ${match.teamAway}`);
-            await this.recordNotification('prediction_closing', match.id, false, 'Falha ao enviar');
-          }
-        } else {
           this.logger.log(
-            `Fora da janela de notificação para ${match.teamHome} x ${match.teamAway}: ` +
-            `now=${new Date(now).toISOString()}, ` +
-            `janela=[${new Date(lockDeadline - 5 * 60 * 1000).toISOString()}, ${new Date(lockDeadline).toISOString()})`,
+            `Jogo: ${match.teamHome} x ${match.teamAway} ` +
+            `| ID: ${match.id} ` +
+            `| Partida: ${match.matchDate.toISOString()} ` +
+            `| Bloqueio: ${new Date(lockDeadline).toISOString()} ` +
+            `| Agora: ${new Date(now).toISOString()} ` +
+            `| Diferença para bloqueio: ${diffMin}min`,
           );
+
+          if (now >= lockDeadline - 5 * 60 * 1000 && now < lockDeadline) {
+            const alreadySent = await this.hasNotificationBeenSent('prediction_closing', match.id);
+            if (alreadySent) {
+              this.logger.log(`Notificação já enviada para ${match.teamHome} x ${match.teamAway} — ignorando`);
+              continue;
+            }
+
+            this.logger.log(`Enviando notificação de fechamento para ${match.teamHome} x ${match.teamAway}`);
+            const sent = await this.sendPredictionClosingNotification(
+              match.teamHome,
+              match.teamAway,
+              match.matchDate,
+              match.teamHomeIso,
+              match.teamAwayIso,
+            );
+
+            if (sent) {
+              await this.recordNotification('prediction_closing', match.id, true);
+              this.logger.log(`Notificação de fechamento enviada com sucesso para ${match.teamHome} x ${match.teamAway}`);
+            } else {
+              this.logger.error(`Falha ao enviar notificação de fechamento para ${match.teamHome} x ${match.teamAway}`);
+              await this.recordNotification('prediction_closing', match.id, false, 'Falha ao enviar');
+            }
+          } else {
+            this.logger.log(
+              `Fora da janela de notificação para ${match.teamHome} x ${match.teamAway}: ` +
+              `now=${new Date(now).toISOString()}, ` +
+              `janela=[${new Date(lockDeadline - 5 * 60 * 1000).toISOString()}, ${new Date(lockDeadline).toISOString()})`,
+            );
+          }
+        } catch (innerErr) {
+          const innerMsg = innerErr instanceof Error ? innerErr.message : String(innerErr);
+          this.logger.error(`Erro ao processar notificação para ${match.teamHome} x ${match.teamAway}: ${innerMsg}`);
         }
       }
     } catch (err) {
@@ -518,9 +621,11 @@ export class WhatsappService implements OnModuleDestroy {
     teamHome: string,
     teamAway: string,
     matchDate: Date,
+    teamHomeIso?: string,
+    teamAwayIso?: string,
   ): Promise<boolean> {
     this.logger.log(`Disparo manual: ${teamHome} x ${teamAway} às ${matchDate.toISOString()}`);
-    const sent = await this.sendPredictionClosingNotification(teamHome, teamAway, matchDate);
+    const sent = await this.sendPredictionClosingNotification(teamHome, teamAway, matchDate, teamHomeIso, teamAwayIso);
     return sent;
   }
 }

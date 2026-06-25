@@ -76,12 +76,14 @@ export class WhatsappController {
   }
 
   @Post('check-closing')
-  async checkClosing(@Body() dto: { teamHome: string; teamAway: string; matchDate: string }) {
+  async checkClosing(@Body() dto: { teamHome: string; teamAway: string; matchDate: string; teamHomeIso?: string; teamAwayIso?: string }) {
     const matchDate = new Date(dto.matchDate);
     const success = await this.whatsappService.checkAndSendClosingNotification(
       dto.teamHome,
       dto.teamAway,
       matchDate,
+      dto.teamHomeIso,
+      dto.teamAwayIso,
     );
     return {
       message: success
