@@ -174,7 +174,7 @@ export class FootballApiService implements OnModuleInit {
       const homeInfo = getTeamInfo(homeEn);
       const awayInfo = getTeamInfo(awayEn);
 
-      const existing = await this.prisma.match.findFirst({
+      let existing = await this.prisma.match.findFirst({
         where: {
           teamHome: homeInfo.name,
           teamAway: awayInfo.name,
@@ -182,6 +182,33 @@ export class FootballApiService implements OnModuleInit {
           groupLabel: match.group || null,
         },
       });
+
+      // Fallback: when API now returns real team names but DB still has placeholder labels
+      if (!existing && match.home_team_label && match.away_team_label) {
+        const labelLookup = await this.prisma.match.findFirst({
+          where: {
+            teamHome: match.home_team_label,
+            teamAway: match.away_team_label,
+            phase,
+            groupLabel: match.group || null,
+          },
+        });
+        if (labelLookup) {
+          await this.prisma.match.update({
+            where: { id: labelLookup.id },
+            data: {
+              teamHome: homeInfo.name,
+              teamAway: awayInfo.name,
+              teamHomeIso: homeInfo.iso2 || null,
+              teamAwayIso: awayInfo.iso2 || null,
+              flagHome: homeInfo.flag || null,
+              flagAway: awayInfo.flag || null,
+            },
+          });
+          existing = labelLookup;
+          updatedMatches++;
+        }
+      }
 
       const matchData = {
         teamHome: homeInfo.name,
@@ -240,7 +267,143 @@ export class FootballApiService implements OnModuleInit {
 
     this.lastFullSync = new Date();
     this.logger.log(`Sync completo: ${syncedMatches} novos, ${updatedMatches} atualizados, ${stadiums.length} estádios, ${groups.length} grupos`);
+
+    const resolved = await this.resolveKnockoutPlaceholders();
+    if (resolved > 0) {
+      this.logger.log(`Sync: ${resolved} knockout matches resolvidos com times reais`);
+    }
+
     return { teams: teams.length, matches: syncedMatches, stadiums: stadiums.length, groups: groups.length };
+  }
+
+  /**
+   * Resolve knockout matches whose team names are still placeholder labels
+   * (e.g. "Winner Group A", "Runner-up Group B", "3rd Group C/E/F/H/I")
+   * by looking up actual group standings from the API.
+   */
+  async resolveKnockoutPlaceholders(): Promise<number> {
+    const [apiMatches, standings] = await Promise.all([
+      this.fetchMatches(),
+      this.fetchStandings(),
+    ]);
+
+    const groupMap: Record<string, { name: string; flag: string; iso2: string; pts: number; gd: number; gf: number }[]> = {};
+    for (const group of standings) {
+      groupMap[group.name] = group.teams;
+    }
+
+    // Compute best 8 third-placed teams across all groups
+    const allThirdPlaced = standings
+      .map((g) => ({
+        group: g.name,
+        team: g.teams[2],
+      }))
+      .filter((t) => t.team != null)
+      .sort((a, b) => {
+        if (b.team.pts !== a.team.pts) return b.team.pts - a.team.pts;
+        if (b.team.gd !== a.team.gd) return b.team.gd - a.team.gd;
+        return b.team.gf - a.team.gf;
+      });
+
+    const qualifiedThird: Set<string> = new Set(allThirdPlaced.slice(0, 8).map((t) => t.group));
+
+    let updated = 0;
+
+    for (const apiMatch of apiMatches) {
+      if (apiMatch.home_team_id === '0' && apiMatch.away_team_id === '0') continue;
+
+      const phase = this.parsePhase(apiMatch.type);
+      const homeLabel = apiMatch.home_team_label;
+      const awayLabel = apiMatch.away_team_label;
+      if (!homeLabel || !awayLabel) continue;
+
+      const dbMatch = await this.prisma.match.findFirst({
+        where: {
+          teamHome: homeLabel,
+          teamAway: awayLabel,
+          phase,
+          groupLabel: apiMatch.group || null,
+        },
+      });
+      if (!dbMatch) continue;
+
+      // Resolve actual team info: prefer API name, fallback to standings resolution
+      const resolvedHome = apiMatch.home_team_name_en
+        ? getTeamInfo(apiMatch.home_team_name_en)
+        : this.resolveFromStandings(homeLabel, groupMap, qualifiedThird);
+
+      const resolvedAway = apiMatch.away_team_name_en
+        ? getTeamInfo(apiMatch.away_team_name_en)
+        : this.resolveFromStandings(awayLabel, groupMap, qualifiedThird);
+
+      const canResolveHome = resolvedHome.flag.length > 0;
+      const canResolveAway = resolvedAway.flag.length > 0;
+      if (!canResolveHome && !canResolveAway) continue;
+
+      const updateData: any = {};
+      if (canResolveHome && (dbMatch.teamHome !== resolvedHome.name || !dbMatch.flagHome)) {
+        updateData.teamHome = resolvedHome.name;
+        updateData.teamHomeIso = resolvedHome.iso2 || null;
+        updateData.flagHome = resolvedHome.flag || null;
+      }
+      if (canResolveAway && (dbMatch.teamAway !== resolvedAway.name || !dbMatch.flagAway)) {
+        updateData.teamAway = resolvedAway.name;
+        updateData.teamAwayIso = resolvedAway.iso2 || null;
+        updateData.flagAway = resolvedAway.flag || null;
+      }
+
+      if (Object.keys(updateData).length === 0) continue;
+
+      await this.prisma.match.update({
+        where: { id: dbMatch.id },
+        data: updateData,
+      });
+      updated++;
+    }
+
+    return updated;
+  }
+
+  private resolveFromStandings(
+    label: string,
+    groupMap: Record<string, { name: string; flag: string; iso2: string; pts: number; gd: number; gf: number }[]>,
+    qualifiedThird: Set<string>,
+  ): { name: string; flag: string; iso2: string } {
+    // "Winner Group X" → 1st place
+    const winnerMatch = label.match(/^Winner\s+Group\s+([A-Z])$/);
+    if (winnerMatch) {
+      const teams = groupMap[winnerMatch[1]];
+      if (teams && teams[0] && teams[0].flag) return teams[0];
+      return { name: label, flag: '', iso2: '' };
+    }
+
+    // "Runner-up Group X" → 2nd place
+    const runnerMatch = label.match(/^Runner-up\s+Group\s+([A-Z])$/);
+    if (runnerMatch) {
+      const teams = groupMap[runnerMatch[1]];
+      if (teams && teams[1] && teams[1].flag) return teams[1];
+      return { name: label, flag: '', iso2: '' };
+    }
+
+    // "3rd Group X/Y/Z/..." → best 3rd place among listed groups
+    if (label.startsWith('3rd Group ')) {
+      const groupsInLabel: string[] = [];
+      const parts = label.replace('3rd Group ', '').split('/');
+      for (const p of parts) {
+        const g = p.trim();
+        if (g && /^[A-Z]$/.test(g)) groupsInLabel.push(g);
+      }
+
+      for (const g of groupsInLabel) {
+        if (qualifiedThird.has(g)) {
+          const teams = groupMap[g];
+          if (teams && teams[2] && teams[2].flag) return teams[2];
+        }
+      }
+      return { name: label, flag: '', iso2: '' };
+    }
+
+    return { name: label, flag: '', iso2: '' };
   }
 
   async syncResults(): Promise<number> {
@@ -264,7 +427,7 @@ export class FootballApiService implements OnModuleInit {
       const awayInfo = getTeamInfo(awayEn);
       const phase = this.parsePhase(apiMatch.type);
 
-      const existing = await this.prisma.match.findFirst({
+      let existing = await this.prisma.match.findFirst({
         where: {
           teamHome: homeInfo.name,
           teamAway: awayInfo.name,
@@ -272,6 +435,33 @@ export class FootballApiService implements OnModuleInit {
           groupLabel: apiMatch.group || null,
         },
       });
+
+      if (!existing && apiMatch.home_team_label && apiMatch.away_team_label) {
+        const labelLookup = await this.prisma.match.findFirst({
+          where: {
+            teamHome: apiMatch.home_team_label,
+            teamAway: apiMatch.away_team_label,
+            phase,
+            groupLabel: apiMatch.group || null,
+          },
+        });
+        if (labelLookup) {
+          await this.prisma.match.update({
+            where: { id: labelLookup.id },
+            data: {
+              teamHome: homeInfo.name,
+              teamAway: awayInfo.name,
+              teamHomeIso: homeInfo.iso2 || null,
+              teamAwayIso: awayInfo.iso2 || null,
+              flagHome: homeInfo.flag || null,
+              flagAway: awayInfo.flag || null,
+            },
+          });
+          existing = labelLookup;
+          updated++;
+          changedMatchIds.push(labelLookup.id);
+        }
+      }
 
       if (!existing) continue;
 
@@ -356,6 +546,16 @@ export class FootballApiService implements OnModuleInit {
 
     this.lastResultsSync = new Date();
     this.consecutiveFailures = 0;
+
+    try {
+      const resolved = await this.resolveKnockoutPlaceholders();
+      if (resolved > 0) {
+        this.logger.log(`syncResults: ${resolved} knockout matches resolvidos com times reais`);
+      }
+    } catch (resolveErr) {
+      this.logger.warn(`syncResults: erro ao resolver knockout: ${resolveErr.message}`);
+    }
+
     return updated;
   }
 
