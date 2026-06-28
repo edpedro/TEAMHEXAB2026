@@ -429,6 +429,97 @@ export class AdminService {
     };
   }
 
+  async deduplicateMatches() {
+    const logger = new Logger('AdminService');
+    let allMatches = await this.prisma.match.findMany({ orderBy: { matchDate: 'asc' } });
+
+    let removed = 0;
+    let transferred = 0;
+    const details: any[] = [];
+
+    // Pass 1: group by (matchDate + stadium)
+    const dedupPass = async (keyFn: (m: typeof allMatches[0]) => string, label: string) => {
+      const groups = new Map<string, typeof allMatches>();
+      for (const match of allMatches) {
+        const key = keyFn(match);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(match);
+      }
+
+      for (const [, group] of groups) {
+        if (group.length <= 1) continue;
+
+        const scored = await Promise.all(
+          group.map(async (m) => {
+            const predCount = await this.prisma.prediction.count({ where: { matchId: m.id } });
+            return { match: m, predCount };
+          })
+        );
+
+        scored.sort((a, b) => {
+          const aReal = a.match.teamHomeIso ? 1 : 0;
+          const bReal = b.match.teamHomeIso ? 1 : 0;
+          if (bReal !== aReal) return bReal - aReal;
+          const aScore = a.match.homeScore != null ? 1 : 0;
+          const bScore = b.match.homeScore != null ? 1 : 0;
+          if (bScore !== aScore) return bScore - aScore;
+          return b.predCount - a.predCount;
+        });
+
+        const keeper = scored[0];
+        const duplicates = scored.slice(1);
+
+        for (const dup of duplicates) {
+          const dupPreds = await this.prisma.prediction.findMany({ where: { matchId: dup.match.id } });
+          for (const pred of dupPreds) {
+            const existing = await this.prisma.prediction.findUnique({
+              where: { userId_matchId: { userId: pred.userId, matchId: keeper.match.id } },
+            });
+            if (!existing) {
+              await this.prisma.prediction.update({
+                where: { id: pred.id },
+                data: { matchId: keeper.match.id },
+              });
+              transferred++;
+            }
+            await this.prisma.prediction.delete({ where: { id: pred.id } }).catch(() => {});
+          }
+
+          await this.prisma.match.delete({ where: { id: dup.match.id } });
+          removed++;
+
+          details.push({
+            pass: label,
+            removed: `${dup.match.teamHome} vs ${dup.match.teamAway} (${dup.match.phase})`,
+            kept: `${keeper.match.teamHome} vs ${keeper.match.teamAway}`,
+            stadium: keeper.match.stadium,
+            date: keeper.match.matchDate,
+          });
+        }
+      }
+
+      // Re-fetch after deletions for next pass
+      if (removed > 0) {
+        allMatches = await this.prisma.match.findMany({ orderBy: { matchDate: 'asc' } });
+      }
+    };
+
+    // Pass 1: by (matchDate + stadium)
+    await dedupPass(
+      (m) => `${m.matchDate.getTime()}|${m.stadium || '__null__'}`,
+      'date+stadium',
+    );
+
+    // Pass 2: by (matchDate + teamHome + teamAway) — catches same match at different stadiums
+    await dedupPass(
+      (m) => `${m.matchDate.getTime()}|${m.teamHome}|${m.teamAway}`,
+      'date+teams',
+    );
+
+    logger.log(`Dedup: ${removed} duplicatas removidas, ${transferred} palpites transferidos`);
+    return { success: true, removed, transferred, details };
+  }
+
   async resetFinishedMatches() {
     const utcNow = new Date().toISOString();
     const matches = await this.prisma.match.findMany({

@@ -149,7 +149,14 @@ describe('FootballApiService', () => {
         id: 'm1',
         teamHome: 'Brasil',
         teamAway: 'Argentina',
-        matchDate: new Date(Date.UTC(2026, 5, 15, 21, 0)),
+        teamHomeIso: 'br',
+        teamAwayIso: 'ar',
+        flagHome: 'https://flagcdn.com/w160/br.png',
+        flagAway: 'https://flagcdn.com/w160/ar.png',
+        stadium: 'Estádio Azteca',
+        city: 'Cidade do México',
+        country: 'México',
+        matchDate: new Date(Date.UTC(2026, 5, 16, 0, 0)),
         phase: 'Fase de Grupos',
         status: MatchStatus.FINISHED,
         homeScore: 2,
@@ -188,7 +195,11 @@ describe('FootballApiService', () => {
 
       await service.syncAll();
 
-      expect(mockPrisma.match.update).not.toHaveBeenCalled();
+      // Should NOT update matchDate, but may update other fields (scores)
+      const updateCalls = mockPrisma.match.update.mock.calls;
+      for (const call of updateCalls) {
+        expect(call[0].data.matchDate).toBeUndefined();
+      }
     });
 
     it('deve atualizar matchDate de partida SCHEDULED', async () => {

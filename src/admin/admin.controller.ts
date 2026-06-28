@@ -82,6 +82,11 @@ export class AdminController {
     return this.adminService.setResult(matchId, homeScore, awayScore);
   }
 
+  @Post('matches/deduplicate')
+  deduplicateMatches() {
+    return this.adminService.deduplicateMatches();
+  }
+
   @Post('matches/reset-finished')
   resetFinished() {
     return this.adminService.resetFinishedMatches();

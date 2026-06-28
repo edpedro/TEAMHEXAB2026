@@ -174,14 +174,29 @@ export class FootballApiService implements OnModuleInit {
       const homeInfo = getTeamInfo(homeEn);
       const awayInfo = getTeamInfo(awayEn);
 
-      let existing = await this.prisma.match.findFirst({
-        where: {
-          teamHome: homeInfo.name,
-          teamAway: awayInfo.name,
-          phase,
-          groupLabel: match.group || null,
-        },
-      });
+      const hasRealTeams = homeInfo.iso2 !== '' && awayInfo.iso2 !== '';
+
+      // Primary dedup: (matchDate + stadium) — no two matches share the same venue & time
+      let existing = stadiumInfo?.name
+        ? await this.prisma.match.findFirst({
+            where: {
+              matchDate,
+              stadium: stadiumInfo.name,
+            },
+          })
+        : null;
+
+      // Fallback: lookup by team names (backward compat, handles null stadium)
+      if (!existing) {
+        existing = await this.prisma.match.findFirst({
+          where: {
+            teamHome: homeInfo.name,
+            teamAway: awayInfo.name,
+            phase,
+            groupLabel: match.group || null,
+          },
+        });
+      }
 
       // Fallback: when API now returns real team names but DB still has placeholder labels
       if (!existing && match.home_team_label && match.away_team_label) {
@@ -194,16 +209,21 @@ export class FootballApiService implements OnModuleInit {
           },
         });
         if (labelLookup) {
+          const updateLabel: any = {};
+          if (hasRealTeams) {
+            updateLabel.teamHome = homeInfo.name;
+            updateLabel.teamAway = awayInfo.name;
+            updateLabel.teamHomeIso = homeInfo.iso2 || null;
+            updateLabel.teamAwayIso = awayInfo.iso2 || null;
+            updateLabel.flagHome = homeInfo.flag || null;
+            updateLabel.flagAway = awayInfo.flag || null;
+          }
+          if (stadiumInfo?.name) updateLabel.stadium = stadiumInfo.name;
+          if (stadiumInfo?.city) updateLabel.city = stadiumInfo.city;
+          if (stadiumInfo?.country) updateLabel.country = stadiumInfo.country;
           await this.prisma.match.update({
             where: { id: labelLookup.id },
-            data: {
-              teamHome: homeInfo.name,
-              teamAway: awayInfo.name,
-              teamHomeIso: homeInfo.iso2 || null,
-              teamAwayIso: awayInfo.iso2 || null,
-              flagHome: homeInfo.flag || null,
-              flagAway: awayInfo.flag || null,
-            },
+            data: updateLabel,
           });
           existing = labelLookup;
           updatedMatches++;
@@ -238,9 +258,24 @@ export class FootballApiService implements OnModuleInit {
         const scoresChanged = apiHasScore && (existing.homeScore !== apiHomeScore || existing.awayScore !== apiAwayScore);
         const needsScoreUpdate = (apiFinished && apiHasScore) || (scoresChanged && (apiHomeScore > 0 || apiAwayScore > 0));
 
-        if (needsDateUpdate || needsScoreUpdate || needsPhaseUpdate) {
+        // Check if existing is a placeholder entry that needs real team names
+        const existingHasPlaceholders = !existing.teamHomeIso || !existing.teamAwayIso;
+        const needsTeamUpdate = hasRealTeams && existingHasPlaceholders;
+
+        if (needsDateUpdate || needsScoreUpdate || needsPhaseUpdate || needsTeamUpdate) {
           const updateData: any = {};
           if (needsDateUpdate) updateData.matchDate = matchDate;
+          if (needsTeamUpdate) {
+            updateData.teamHome = homeInfo.name;
+            updateData.teamAway = awayInfo.name;
+            updateData.teamHomeIso = homeInfo.iso2 || null;
+            updateData.teamAwayIso = awayInfo.iso2 || null;
+            updateData.flagHome = homeInfo.flag || null;
+            updateData.flagAway = awayInfo.flag || null;
+            if (stadiumInfo?.name) updateData.stadium = stadiumInfo.name;
+            if (stadiumInfo?.city) updateData.city = stadiumInfo.city;
+            if (stadiumInfo?.country) updateData.country = stadiumInfo.country;
+          }
           if (needsScoreUpdate) {
             updateData.homeScore = apiHomeScore;
             updateData.awayScore = apiAwayScore;
@@ -317,14 +352,27 @@ export class FootballApiService implements OnModuleInit {
       const awayLabel = apiMatch.away_team_label;
       if (!homeLabel || !awayLabel) continue;
 
-      const dbMatch = await this.prisma.match.findFirst({
-        where: {
-          teamHome: homeLabel,
-          teamAway: awayLabel,
-          phase,
-          groupLabel: apiMatch.group || null,
-        },
-      });
+      const stadiumInfo = getStadiumInfo(apiMatch.stadium_id);
+      const matchDate = this.parseLocalDate(apiMatch.local_date, stadiumInfo?.utcOffsetHours);
+      if (!matchDate) continue;
+
+      // Try date+stadium first (strong dedup), fallback to label names
+      let dbMatch = stadiumInfo?.name
+        ? await this.prisma.match.findFirst({
+            where: { matchDate, stadium: stadiumInfo.name },
+          })
+        : null;
+
+      if (!dbMatch) {
+        dbMatch = await this.prisma.match.findFirst({
+          where: {
+            teamHome: homeLabel,
+            teamAway: awayLabel,
+            phase,
+            groupLabel: apiMatch.group || null,
+          },
+        });
+      }
       if (!dbMatch) continue;
 
       // Resolve actual team info: prefer API name, fallback to standings resolution
@@ -426,15 +474,29 @@ export class FootballApiService implements OnModuleInit {
       const homeInfo = getTeamInfo(homeEn);
       const awayInfo = getTeamInfo(awayEn);
       const phase = this.parsePhase(apiMatch.type);
+      const hasRealTeams = homeInfo.iso2 !== '' && awayInfo.iso2 !== '';
 
-      let existing = await this.prisma.match.findFirst({
-        where: {
-          teamHome: homeInfo.name,
-          teamAway: awayInfo.name,
-          phase,
-          groupLabel: apiMatch.group || null,
-        },
-      });
+      // Primary dedup: (matchDate + stadium)
+      let existing = stadiumInfo?.name
+        ? await this.prisma.match.findFirst({
+            where: {
+              matchDate,
+              stadium: stadiumInfo.name,
+            },
+          })
+        : null;
+
+      // Fallback: lookup by team names
+      if (!existing) {
+        existing = await this.prisma.match.findFirst({
+          where: {
+            teamHome: homeInfo.name,
+            teamAway: awayInfo.name,
+            phase,
+            groupLabel: apiMatch.group || null,
+          },
+        });
+      }
 
       if (!existing && apiMatch.home_team_label && apiMatch.away_team_label) {
         const labelLookup = await this.prisma.match.findFirst({
@@ -446,16 +508,21 @@ export class FootballApiService implements OnModuleInit {
           },
         });
         if (labelLookup) {
+          const updateLabel: any = {};
+          if (hasRealTeams) {
+            updateLabel.teamHome = homeInfo.name;
+            updateLabel.teamAway = awayInfo.name;
+            updateLabel.teamHomeIso = homeInfo.iso2 || null;
+            updateLabel.teamAwayIso = awayInfo.iso2 || null;
+            updateLabel.flagHome = homeInfo.flag || null;
+            updateLabel.flagAway = awayInfo.flag || null;
+          }
+          if (stadiumInfo?.name) updateLabel.stadium = stadiumInfo.name;
+          if (stadiumInfo?.city) updateLabel.city = stadiumInfo.city;
+          if (stadiumInfo?.country) updateLabel.country = stadiumInfo.country;
           await this.prisma.match.update({
             where: { id: labelLookup.id },
-            data: {
-              teamHome: homeInfo.name,
-              teamAway: awayInfo.name,
-              teamHomeIso: homeInfo.iso2 || null,
-              teamAwayIso: awayInfo.iso2 || null,
-              flagHome: homeInfo.flag || null,
-              flagAway: awayInfo.flag || null,
-            },
+            data: updateLabel,
           });
           existing = labelLookup;
           updated++;
